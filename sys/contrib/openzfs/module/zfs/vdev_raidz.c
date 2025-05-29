@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -2234,6 +2235,33 @@ vdev_raidz_get_logical_width(vdev_raidz_t *vdrz, uint64_t txg)
 	mutex_exit(&vdrz->vd_expand_lock);
 	return (width);
 }
+/*
+ * This code converts an asize into the largest psize that can safely be written
+ * to an allocation of that size for this vdev.
+ *
+ * Note that this function will not take into account the effect of gang
+ * headers, which also modify the ASIZE of the DVAs. It is purely a reverse of
+ * the psize_to_asize function.
+ */
+static uint64_t
+vdev_raidz_asize_to_psize(vdev_t *vd, uint64_t asize, uint64_t txg)
+{
+	vdev_raidz_t *vdrz = vd->vdev_tsd;
+	uint64_t psize;
+	uint64_t ashift = vd->vdev_top->vdev_ashift;
+	uint64_t cols = vdrz->vd_original_width;
+	uint64_t nparity = vdrz->vd_nparity;
+
+	cols = vdev_raidz_get_logical_width(vdrz, txg);
+
+	ASSERT0(asize % (1 << ashift));
+
+	psize = (asize >> ashift);
+	psize -= nparity * DIV_ROUND_UP(psize, cols);
+	psize <<= ashift;
+
+	return (asize);
+}
 
 /*
  * Note: If the RAIDZ vdev has been expanded, older BP's may have allocated
@@ -2244,7 +2272,7 @@ vdev_raidz_get_logical_width(vdev_raidz_t *vdrz, uint64_t txg)
  * allocate P+1 sectors regardless of width ("cols", which is at least P+1).
  */
 static uint64_t
-vdev_raidz_asize(vdev_t *vd, uint64_t psize, uint64_t txg)
+vdev_raidz_psize_to_asize(vdev_t *vd, uint64_t psize, uint64_t txg)
 {
 	vdev_raidz_t *vdrz = vd->vdev_tsd;
 	uint64_t asize;
@@ -2305,10 +2333,10 @@ vdev_raidz_io_verify(zio_t *zio, raidz_map_t *rm, raidz_row_t *rr, int col)
 {
 	(void) rm;
 #ifdef ZFS_DEBUG
-	range_seg64_t logical_rs, physical_rs, remain_rs;
+	zfs_range_seg64_t logical_rs, physical_rs, remain_rs;
 	logical_rs.rs_start = rr->rr_offset;
 	logical_rs.rs_end = logical_rs.rs_start +
-	    vdev_raidz_asize(zio->io_vd, rr->rr_size,
+	    vdev_raidz_psize_to_asize(zio->io_vd, rr->rr_size,
 	    BP_GET_BIRTH(zio->io_bp));
 
 	raidz_col_t *rc = &rr->rr_col[col];
@@ -3650,8 +3678,8 @@ vdev_raidz_need_resilver(vdev_t *vd, const dva_t *dva, size_t psize,
 }
 
 static void
-vdev_raidz_xlate(vdev_t *cvd, const range_seg64_t *logical_rs,
-    range_seg64_t *physical_rs, range_seg64_t *remain_rs)
+vdev_raidz_xlate(vdev_t *cvd, const zfs_range_seg64_t *logical_rs,
+    zfs_range_seg64_t *physical_rs, zfs_range_seg64_t *remain_rs)
 {
 	(void) remain_rs;
 
@@ -3953,18 +3981,18 @@ vdev_raidz_expand_child_replacing(vdev_t *raidz_vd)
 }
 
 static boolean_t
-raidz_reflow_impl(vdev_t *vd, vdev_raidz_expand_t *vre, range_tree_t *rt,
+raidz_reflow_impl(vdev_t *vd, vdev_raidz_expand_t *vre, zfs_range_tree_t *rt,
     dmu_tx_t *tx)
 {
 	spa_t *spa = vd->vdev_spa;
 	uint_t ashift = vd->vdev_top->vdev_ashift;
 
-	range_seg_t *rs = range_tree_first(rt);
+	zfs_range_seg_t *rs = zfs_range_tree_first(rt);
 	if (rt == NULL)
 		return (B_FALSE);
-	uint64_t offset = rs_get_start(rs, rt);
+	uint64_t offset = zfs_rs_get_start(rs, rt);
 	ASSERT(IS_P2ALIGNED(offset, 1 << ashift));
-	uint64_t size = rs_get_end(rs, rt) - offset;
+	uint64_t size = zfs_rs_get_end(rs, rt) - offset;
 	ASSERT3U(size, >=, 1 << ashift);
 	ASSERT(IS_P2ALIGNED(size, 1 << ashift));
 
@@ -4001,7 +4029,7 @@ raidz_reflow_impl(vdev_t *vd, vdev_raidz_expand_t *vre, range_tree_t *rt,
 	uint_t blocks = MIN(size >> ashift, next_overwrite_blkid - blkid);
 	size = (uint64_t)blocks << ashift;
 
-	range_tree_remove(rt, offset, size);
+	zfs_range_tree_remove(rt, offset, size);
 
 	uint_t reads = MIN(blocks, old_children);
 	uint_t writes = MIN(blocks, vd->vdev_children);
@@ -4553,12 +4581,13 @@ spa_raidz_expand_thread(void *arg, zthr_t *zthr)
 		 * space (e.g. in ms_defer), and it's fine to copy that too.
 		 */
 		uint64_t shift, start;
-		range_seg_type_t type = metaslab_calculate_range_tree_type(
+		zfs_range_seg_type_t type = metaslab_calculate_range_tree_type(
 		    raidvd, msp, &start, &shift);
-		range_tree_t *rt = range_tree_create(NULL, type, NULL,
+		zfs_range_tree_t *rt = zfs_range_tree_create(NULL, type, NULL,
 		    start, shift);
-		range_tree_add(rt, msp->ms_start, msp->ms_size);
-		range_tree_walk(msp->ms_allocatable, range_tree_remove, rt);
+		zfs_range_tree_add(rt, msp->ms_start, msp->ms_size);
+		zfs_range_tree_walk(msp->ms_allocatable, zfs_range_tree_remove,
+		    rt);
 		mutex_exit(&msp->ms_lock);
 
 		/*
@@ -4572,8 +4601,8 @@ spa_raidz_expand_thread(void *arg, zthr_t *zthr)
 		int sectorsz = 1 << raidvd->vdev_ashift;
 		uint64_t ms_last_offset = msp->ms_start +
 		    msp->ms_size - sectorsz;
-		if (!range_tree_contains(rt, ms_last_offset, sectorsz)) {
-			range_tree_add(rt, ms_last_offset, sectorsz);
+		if (!zfs_range_tree_contains(rt, ms_last_offset, sectorsz)) {
+			zfs_range_tree_add(rt, ms_last_offset, sectorsz);
 		}
 
 		/*
@@ -4582,12 +4611,12 @@ spa_raidz_expand_thread(void *arg, zthr_t *zthr)
 		 * discard any state that we have already processed.
 		 */
 		if (vre->vre_offset > msp->ms_start) {
-			range_tree_clear(rt, msp->ms_start,
+			zfs_range_tree_clear(rt, msp->ms_start,
 			    vre->vre_offset - msp->ms_start);
 		}
 
 		while (!zthr_iscancelled(zthr) &&
-		    !range_tree_is_empty(rt) &&
+		    !zfs_range_tree_is_empty(rt) &&
 		    vre->vre_failed_offset == UINT64_MAX) {
 
 			/*
@@ -4623,7 +4652,7 @@ spa_raidz_expand_thread(void *arg, zthr_t *zthr)
 			dmu_tx_t *tx =
 			    dmu_tx_create_dd(spa_get_dsl(spa)->dp_mos_dir);
 
-			VERIFY0(dmu_tx_assign(tx, TXG_WAIT));
+			VERIFY0(dmu_tx_assign(tx, DMU_TX_WAIT));
 			uint64_t txg = dmu_tx_get_txg(tx);
 
 			/*
@@ -4649,8 +4678,8 @@ spa_raidz_expand_thread(void *arg, zthr_t *zthr)
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 
 		metaslab_enable(msp, B_FALSE, B_FALSE);
-		range_tree_vacate(rt, NULL, NULL);
-		range_tree_destroy(rt);
+		zfs_range_tree_vacate(rt, NULL, NULL);
+		zfs_range_tree_destroy(rt);
 
 		spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 		raidvd = vdev_lookup_top(spa, vre->vre_vdev_id);
@@ -5091,7 +5120,8 @@ vdev_ops_t vdev_raidz_ops = {
 	.vdev_op_fini = vdev_raidz_fini,
 	.vdev_op_open = vdev_raidz_open,
 	.vdev_op_close = vdev_raidz_close,
-	.vdev_op_asize = vdev_raidz_asize,
+	.vdev_op_psize_to_asize = vdev_raidz_psize_to_asize,
+	.vdev_op_asize_to_psize = vdev_raidz_asize_to_psize,
 	.vdev_op_min_asize = vdev_raidz_min_asize,
 	.vdev_op_min_alloc = NULL,
 	.vdev_op_io_start = vdev_raidz_io_start,

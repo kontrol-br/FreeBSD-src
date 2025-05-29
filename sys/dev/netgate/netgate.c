@@ -663,6 +663,10 @@ netgate_probe(device_t dev)
 	if (netgate_model == NETGATE_UNKNOWN &&
 	    chassis != NULL)
 		netgate_model = netgate_chassis(chassis);
+	/* QEMU with Chassis */
+	if (netgate_model == NETGATE_VM_QEMU &&
+	    chassis != NULL)
+		netgate_model = netgate_chassis(chassis);	
 
 	if (bios != NULL)
 		freeenv(bios);
@@ -707,9 +711,9 @@ netgate_attach(device_t dev)
 	ctx = device_get_sysctl_ctx(dev);
 	child = SYSCTL_CHILDREN(SYSCTL_PARENT(device_get_sysctl_tree(dev)));
 	SYSCTL_ADD_STRING(ctx, child, OID_AUTO, "model", CTLFLAG_RD,
-	    sc->sc_model_str, sizeof(sc->sc_model_str), "Device model");
+	    sc->sc_model_str, 0, "Device model");
 	SYSCTL_ADD_STRING(ctx, child, OID_AUTO, "desc", CTLFLAG_RD,
-	    sc->sc_desc_str, sizeof(sc->sc_desc_str), "Device description");
+	    sc->sc_desc_str, 0, "Device description");
 
 	device_printf(dev, "version: %s\n", NETGATE_MOD_VER);
 

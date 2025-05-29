@@ -4,7 +4,7 @@
  * All rights reserved.
  *
  * Copyright (c) 2016-2019 Netflix, Inc. written by M. Warner Losh
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -71,7 +71,17 @@
 
 #include "loader_efi.h"
 
-struct arch_switch archsw;	/* MI/MD interface boundary */
+struct arch_switch archsw = {	/* MI/MD interface boundary */
+	.arch_autoload = efi_autoload,
+	.arch_getdev = efi_getdev,
+	.arch_copyin = efi_copyin,
+	.arch_copyout = efi_copyout,
+#if defined(__amd64__) || defined(__i386__)
+	.arch_hypervisor = x86_hypervisor,
+#endif
+	.arch_readin = efi_readin,
+	.arch_zfs_probe = efi_zfs_probe,
+};
 
 EFI_GUID acpi = ACPI_TABLE_GUID;
 EFI_GUID acpi20 = ACPI_20_TABLE_GUID;
@@ -513,7 +523,7 @@ find_currdev(bool do_bootmgr, bool is_last,
 	 * it's wrong.
 	 */
 	rootdev = getenv("rootdev");
-	if (rootdev != NULL) {
+	if (rootdev != NULL && *rootdev != '\0') {
 		printf("    Setting currdev to configured rootdev %s\n",
 		    rootdev);
 		set_currdev(rootdev);
@@ -798,10 +808,12 @@ static const char *
 acpi_uart_type(UINT8 t)
 {
 	static const char *types[] = {
-		[0] = "ns8250",		/* Full 16550 */
-		[1] = "ns8250",		/* DBGP Rev 1 16550 subset */
-		[3] = "pl011",		/* Arm PL011 */
-		[5] = "ns8250",		/* Nvidia 16550 */
+		[0x00] = "ns8250",	/* Full 16550 */
+		[0x01] = "ns8250",	/* DBGP Rev 1 16550 subset */
+		[0x03] = "pl011",	/* Arm PL011 */
+		[0x05] = "ns8250",	/* Nvidia 16550 */
+		[0x0d] = "pl011",	/* Arm SBSA 32-bit width */
+		[0x0e] = "pl011",	/* Arm SBSA generic */
 		[0x12] = "ns8250",	/* 16550 defined in SerialPort */
 	};
 
@@ -1150,12 +1162,45 @@ acpi_detect(void)
 	}
 }
 
+static void
+efi_smbios_detect(void)
+{
+	VOID *smbios_v2_ptr = NULL;
+	UINTN k;
+
+	for (k = 0; k < ST->NumberOfTableEntries; k++) {
+		EFI_GUID *guid;
+		VOID *const VT = ST->ConfigurationTable[k].VendorTable;
+		char buf[40];
+		bool is_smbios_v2, is_smbios_v3;
+
+		guid = &ST->ConfigurationTable[k].VendorGuid;
+		is_smbios_v2 = memcmp(guid, &smbios, sizeof(*guid)) == 0;
+		is_smbios_v3 = memcmp(guid, &smbios3, sizeof(*guid)) == 0;
+
+		if (!is_smbios_v2 && !is_smbios_v3)
+			continue;
+
+		snprintf(buf, sizeof(buf), "%p", VT);
+		setenv("hint.smbios.0.mem", buf, 1);
+		if (is_smbios_v2)
+			/*
+			 * We will parse a v2 table only if we don't find a v3
+			 * table.  In the meantime, store the address.
+			 */
+			smbios_v2_ptr = VT;
+		else if (smbios_detect(VT) != NULL)
+			/* v3 parsing succeeded, we are done. */
+			return;
+	}
+	if (smbios_v2_ptr != NULL)
+		(void)smbios_detect(smbios_v2_ptr);
+}
+
 EFI_STATUS
 main(int argc, CHAR16 *argv[])
 {
-	EFI_GUID *guid;
 	int howto, i, uhowto;
-	UINTN k;
 	bool has_kbd, is_last;
 	char *s;
 	EFI_DEVICE_PATH *imgpath;
@@ -1167,30 +1212,8 @@ main(int argc, CHAR16 *argv[])
 	char buf[32];
 	bool uefi_boot_mgr;
 
-	archsw.arch_autoload = efi_autoload;
-	archsw.arch_getdev = efi_getdev;
-	archsw.arch_copyin = efi_copyin;
-	archsw.arch_copyout = efi_copyout;
-#if defined(__amd64__) || defined(__i386__)
-	archsw.arch_hypervisor = x86_hypervisor;
-#endif
-	archsw.arch_readin = efi_readin;
-	archsw.arch_zfs_probe = efi_zfs_probe;
-
 #if !defined(__arm__)
-	for (k = 0; k < ST->NumberOfTableEntries; k++) {
-		guid = &ST->ConfigurationTable[k].VendorGuid;
-		if (!memcmp(guid, &smbios, sizeof(EFI_GUID)) ||
-		    !memcmp(guid, &smbios3, sizeof(EFI_GUID))) {
-			char buf[40];
-
-			snprintf(buf, sizeof(buf), "%p",
-			    ST->ConfigurationTable[k].VendorTable);
-			setenv("hint.smbios.0.mem", buf, 1);
-			smbios_detect(ST->ConfigurationTable[k].VendorTable);
-			break;
-		}
-	}
+	efi_smbios_detect();
 #endif
 
         /* Get our loaded image protocol interface structure. */

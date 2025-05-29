@@ -452,7 +452,6 @@ struct tcpcb {
 	tcp_seq gput_seq;		/* Outbound measurement seq */
 	tcp_seq gput_ack;		/* Inbound measurement ack */
 	int32_t t_stats_gput_prev;	/* XXXLAS: Prev gput measurement */
-	uint32_t t_maxpeakrate;		/* max peak rate set by user, bytes/s */
 	uint32_t t_sndtlppack;		/* tail loss probe packets sent */
 	uint64_t t_sndtlpbyte;		/* total tail loss probe bytes sent */
 	uint64_t t_sndbytes;		/* total bytes sent */
@@ -500,10 +499,6 @@ struct tcpcb {
 	uint64_t tcp_cnt_counters[TCP_NUM_CNT_COUNTERS];
 	uint64_t tcp_proc_time[TCP_NUM_CNT_COUNTERS];
 #endif
-#ifdef TCPPCAP
-	struct mbufq t_inpkts;		/* List of saved input packets. */
-	struct mbufq t_outpkts;		/* List of saved output packets. */
-#endif
 };
 #endif	/* _KERNEL || _WANT_TCPCB */
 
@@ -533,15 +528,6 @@ typedef enum {
 /* Minimum map entries limit value, if set */
 #define TCP_MIN_MAP_ENTRIES_LIMIT	128
 
-/*
- * TODO: We yet need to brave plowing in
- * to tcp_input() and the pru_usrreq() block.
- * Right now these go to the old standards which
- * are somewhat ok, but in the long term may
- * need to be changed. If we do tackle tcp_input()
- * then we need to get rid of the tcp_do_segment()
- * function below.
- */
 /* Flags for tcp functions */
 #define	TCP_FUNC_BEING_REMOVED	0x01   	/* Can no longer be referenced */
 #define	TCP_FUNC_OUTPUT_CANDROP	0x02   	/* tfb_tcp_output may ask tcp_drop */
@@ -1271,6 +1257,7 @@ VNET_DECLARE(uint32_t, tcp_ack_war_time_window);
 VNET_DECLARE(int, tcp_autorcvbuf_max);
 VNET_DECLARE(int, tcp_autosndbuf_inc);
 VNET_DECLARE(int, tcp_autosndbuf_max);
+VNET_DECLARE(int, tcp_bind_all_fibs);
 VNET_DECLARE(int, tcp_delack_enabled);
 VNET_DECLARE(int, tcp_do_autorcvbuf);
 VNET_DECLARE(int, tcp_do_autosndbuf);
@@ -1324,6 +1311,7 @@ VNET_DECLARE(struct inpcbinfo, tcbinfo);
 #define	V_tcp_autorcvbuf_max		VNET(tcp_autorcvbuf_max)
 #define	V_tcp_autosndbuf_inc		VNET(tcp_autosndbuf_inc)
 #define	V_tcp_autosndbuf_max		VNET(tcp_autosndbuf_max)
+#define	V_tcp_bind_all_fibs		VNET(tcp_bind_all_fibs)
 #define	V_tcp_delack_enabled		VNET(tcp_delack_enabled)
 #define	V_tcp_do_autorcvbuf		VNET(tcp_do_autorcvbuf)
 #define	V_tcp_do_autosndbuf		VNET(tcp_do_autosndbuf)

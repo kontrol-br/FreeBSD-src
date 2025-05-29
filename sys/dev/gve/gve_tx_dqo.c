@@ -44,6 +44,13 @@ gve_unmap_packet(struct gve_tx_ring *tx,
 }
 
 static void
+gve_clear_qpl_pending_pkt(struct gve_tx_pending_pkt_dqo *pending_pkt)
+{
+	pending_pkt->qpl_buf_head = -1;
+	pending_pkt->num_qpl_bufs = 0;
+}
+
+static void
 gve_free_tx_mbufs_dqo(struct gve_tx_ring *tx)
 {
 	struct gve_tx_pending_pkt_dqo *pending_pkt;
@@ -54,10 +61,9 @@ gve_free_tx_mbufs_dqo(struct gve_tx_ring *tx)
 		if (!pending_pkt->mbuf)
 			continue;
 
-		if (gve_is_qpl(tx->com.priv)) {
-			pending_pkt->qpl_buf_head = -1;
-			pending_pkt->num_qpl_bufs = 0;
-		} else
+		if (gve_is_qpl(tx->com.priv))
+			gve_clear_qpl_pending_pkt(pending_pkt);
+		else
 			gve_unmap_packet(tx, pending_pkt);
 
 		m_freem(pending_pkt->mbuf);
@@ -69,6 +75,7 @@ void
 gve_tx_free_ring_dqo(struct gve_priv *priv, int i)
 {
 	struct gve_tx_ring *tx = &priv->tx[i];
+	struct gve_ring_com *com = &tx->com;
 	int j;
 
 	if (tx->dqo.desc_ring != NULL) {
@@ -102,6 +109,11 @@ gve_tx_free_ring_dqo(struct gve_priv *priv, int i)
 	if (gve_is_qpl(priv) && tx->dqo.qpl_bufs != NULL) {
 		free(tx->dqo.qpl_bufs, M_GVE);
 		tx->dqo.qpl_bufs = NULL;
+	}
+
+	if (com->qpl != NULL) {
+		gve_free_qpl(priv, com->qpl);
+		com->qpl = NULL;
 	}
 }
 
@@ -204,7 +216,15 @@ gve_tx_alloc_ring_dqo(struct gve_priv *priv, int i)
 	if (gve_is_qpl(priv)) {
 		int qpl_buf_cnt;
 
-		tx->com.qpl = &priv->qpls[i];
+		tx->com.qpl = gve_alloc_qpl(priv, i, GVE_TX_NUM_QPL_PAGES_DQO,
+		    /*single_kva*/false);
+		if (tx->com.qpl == NULL) {
+			device_printf(priv->dev,
+			    "Failed to alloc QPL for tx ring %d", i);
+			err = ENOMEM;
+			goto abort;
+		}
+
 		qpl_buf_cnt = GVE_TX_BUFS_PER_PAGE_DQO *
 		    tx->com.qpl->num_pages;
 
@@ -507,6 +527,8 @@ gve_alloc_pending_packet(struct gve_tx_ring *tx)
 	tx->dqo.free_pending_pkts_csm = pending_pkt->next;
 	pending_pkt->state = GVE_PACKET_STATE_PENDING_DATA_COMPL;
 
+	gve_set_timestamp(&pending_pkt->enqueue_time_sec);
+
 	return (pending_pkt);
 }
 
@@ -518,6 +540,8 @@ gve_free_pending_packet(struct gve_tx_ring *tx,
 	int32_t old_head;
 
 	pending_pkt->state = GVE_PACKET_STATE_FREE;
+
+	gve_invalidate_timestamp(&pending_pkt->enqueue_time_sec);
 
 	/* Add pending_pkt to the producer list */
 	while (true) {
@@ -880,8 +904,7 @@ gve_reap_qpl_bufs_dqo(struct gve_tx_ring *tx,
 	 */
 	atomic_add_rel_32(&tx->dqo.qpl_bufs_produced, pkt->num_qpl_bufs);
 
-	pkt->qpl_buf_head = -1;
-	pkt->num_qpl_bufs = 0;
+	gve_clear_qpl_pending_pkt(pkt);
 }
 
 static uint64_t
@@ -921,6 +944,29 @@ gve_handle_packet_completion(struct gve_priv *priv,
 }
 
 int
+gve_check_tx_timeout_dqo(struct gve_priv *priv, struct gve_tx_ring *tx)
+{
+	struct gve_tx_pending_pkt_dqo *pending_pkt;
+	int num_timeouts;
+	uint16_t pkt_idx;
+
+	num_timeouts = 0;
+	for (pkt_idx = 0; pkt_idx < tx->dqo.num_pending_pkts; pkt_idx++) {
+		pending_pkt = &tx->dqo.pending_pkts[pkt_idx];
+
+		if (!gve_timestamp_valid(&pending_pkt->enqueue_time_sec))
+			continue;
+
+		if (__predict_false(
+		    gve_seconds_since(&pending_pkt->enqueue_time_sec) >
+		    GVE_TX_TIMEOUT_PKT_SEC))
+			num_timeouts += 1;
+	}
+
+	return (num_timeouts);
+}
+
+int
 gve_tx_intr_dqo(void *arg)
 {
 	struct gve_tx_ring *tx = arg;
@@ -941,8 +987,11 @@ gve_tx_clear_desc_ring_dqo(struct gve_tx_ring *tx)
 	struct gve_ring_com *com = &tx->com;
 	int i;
 
-	for (i = 0; i < com->priv->tx_desc_cnt; i++)
+	for (i = 0; i < com->priv->tx_desc_cnt; i++) {
 		tx->dqo.desc_ring[i] = (union gve_tx_desc_dqo){};
+		gve_invalidate_timestamp(
+		    &tx->dqo.pending_pkts[i].enqueue_time_sec);
+	}
 
 	bus_dmamap_sync(tx->desc_ring_mem.tag, tx->desc_ring_mem.map,
 	    BUS_DMASYNC_PREWRITE);
@@ -981,11 +1030,13 @@ gve_clear_tx_ring_dqo(struct gve_priv *priv, int i)
 
 	gve_free_tx_mbufs_dqo(tx);
 
-	for (j = 0; j < tx->dqo.num_pending_pkts - 1; j++) {
-		tx->dqo.pending_pkts[j].next = j + 1;
+	for (j = 0; j < tx->dqo.num_pending_pkts; j++) {
+		if (gve_is_qpl(tx->com.priv))
+			gve_clear_qpl_pending_pkt(&tx->dqo.pending_pkts[j]);
+		tx->dqo.pending_pkts[j].next =
+		    (j == tx->dqo.num_pending_pkts - 1) ? -1 : j + 1;
 		tx->dqo.pending_pkts[j].state = GVE_PACKET_STATE_FREE;
 	}
-	tx->dqo.pending_pkts[tx->dqo.num_pending_pkts - 1].next = -1;
 	tx->dqo.free_pending_pkts_csm = 0;
 	atomic_store_rel_32(&tx->dqo.free_pending_pkts_prd, -1);
 
@@ -1008,6 +1059,19 @@ gve_clear_tx_ring_dqo(struct gve_priv *priv, int i)
 	gve_tx_clear_compl_ring_dqo(tx);
 }
 
+static uint8_t
+gve_tx_get_gen_bit(uint8_t *desc)
+{
+	uint8_t byte;
+
+	/*
+	 * Prevent generation bit from being read after the rest of the
+	 * descriptor.
+	 */
+	byte = atomic_load_acq_8(desc + GVE_TX_DESC_DQO_GEN_BYTE_OFFSET);
+	return ((byte & GVE_TX_DESC_DQO_GEN_BIT_MASK) != 0);
+}
+
 static bool
 gve_tx_cleanup_dqo(struct gve_priv *priv, struct gve_tx_ring *tx, int budget)
 {
@@ -1020,20 +1084,16 @@ gve_tx_cleanup_dqo(struct gve_priv *priv, struct gve_tx_ring *tx, int budget)
 	uint16_t type;
 
 	while (work_done < budget) {
-		bus_dmamap_sync(tx->dqo.compl_ring_mem.tag, tx->dqo.compl_ring_mem.map,
+		bus_dmamap_sync(tx->dqo.compl_ring_mem.tag,
+		    tx->dqo.compl_ring_mem.map,
 		    BUS_DMASYNC_POSTREAD);
 
 		compl_desc = &tx->dqo.compl_ring[tx->dqo.compl_head];
-		if (compl_desc->generation == tx->dqo.cur_gen_bit)
+		if (gve_tx_get_gen_bit((uint8_t *)compl_desc) ==
+		    tx->dqo.cur_gen_bit)
 			break;
 
-		/*
-		 * Prevent generation bit from being read after the rest of the
-		 * descriptor.
-		 */
-		rmb();
 		type = compl_desc->type;
-
 		if (type == GVE_COMPL_TYPE_DQO_DESC) {
 			/* This is the last descriptor fetched by HW plus one */
 			tx_head = le16toh(compl_desc->tx_head);

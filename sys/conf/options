@@ -155,6 +155,7 @@ MAC_BIBA	opt_dontuse.h
 MAC_BSDEXTENDED	opt_dontuse.h
 MAC_DDB		opt_dontuse.h
 MAC_DEBUG	opt_mac.h
+MAC_DO		opt_dontuse.h
 MAC_IFOFF	opt_dontuse.h
 MAC_IPACL	opt_dontuse.h
 MAC_LOMAC	opt_dontuse.h
@@ -479,7 +480,6 @@ ROUTETABLES		opt_route.h
 FIB_ALGO		opt_route.h
 RSS			opt_rss.h
 SLIP_IFF_OPTS		opt_slip.h
-TCPPCAP		opt_global.h
 SIFTR
 TCP_BLACKBOX		opt_global.h
 TCP_HHOOK		opt_global.h

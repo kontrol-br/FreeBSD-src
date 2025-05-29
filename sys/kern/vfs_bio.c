@@ -160,7 +160,7 @@ nbufp(unsigned i)
 
 caddr_t __read_mostly unmapped_buf;
 #ifdef INVARIANTS
-caddr_t	poisoned_buf = (void *)-1;
+void *poisoned_buf = (void *)-1;
 #endif
 
 /* Used below and for softdep flushing threads in ufs/ffs/ffs_softdep.c */
@@ -1518,8 +1518,8 @@ bufshutdown(int show_busybufs)
 		if (!KERNEL_PANICKED()) {
 			swapoff_all();
 			vfs_unmountall();
+			BOOTTRACE("shutdown unmounted all filesystems");
 		}
-		BOOTTRACE("shutdown unmounted all filesystems");
 	}
 	DELAY(100000);		/* wait for console output to finish */
 }

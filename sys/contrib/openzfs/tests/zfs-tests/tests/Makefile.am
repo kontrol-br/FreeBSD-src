@@ -139,6 +139,10 @@ nobase_dist_datadir_zfs_tests_tests_DATA += \
 	functional/checksum/default.cfg \
 	functional/clean_mirror/clean_mirror_common.kshlib \
 	functional/clean_mirror/default.cfg \
+	functional/crypto/aes_ccm_test.json \
+	functional/crypto/aes_ccm_test.txt \
+	functional/crypto/aes_gcm_test.json \
+	functional/crypto/aes_gcm_test.txt \
 	functional/cli_root/cli_common.kshlib \
 	functional/cli_root/zfs_copies/zfs_copies.cfg \
 	functional/cli_root/zfs_copies/zfs_copies.kshlib \
@@ -271,6 +275,7 @@ nobase_dist_datadir_zfs_tests_tests_DATA += \
 	functional/events/events.cfg \
 	functional/events/events_common.kshlib \
 	functional/fault/fault.cfg \
+	functional/gang_blocks/gang_blocks.kshlib \
 	functional/grow/grow.cfg \
 	functional/history/history.cfg \
 	functional/history/history_common.kshlib \
@@ -615,6 +620,8 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/cli_root/json/setup.ksh \
 	functional/cli_root/json/json_sanity.ksh \
 	functional/cli_root/zinject/zinject_args.ksh \
+	functional/cli_root/zinject/zinject_counts.ksh \
+	functional/cli_root/zinject/zinject_probe.ksh \
 	functional/cli_root/zdb/zdb_002_pos.ksh \
 	functional/cli_root/zdb/zdb_003_pos.ksh \
 	functional/cli_root/zdb/zdb_004_pos.ksh \
@@ -1096,6 +1103,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/cli_root/zpool_get/cleanup.ksh \
 	functional/cli_root/zpool_get/setup.ksh \
 	functional/cli_root/zpool_get/vdev_get_001_pos.ksh \
+	functional/cli_root/zpool_get/vdev_get_all.ksh \
 	functional/cli_root/zpool_get/zpool_get_001_pos.ksh \
 	functional/cli_root/zpool_get/zpool_get_002_pos.ksh \
 	functional/cli_root/zpool_get/zpool_get_003_pos.ksh \
@@ -1425,9 +1433,8 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/crtime/cleanup.ksh \
 	functional/crtime/crtime_001_pos.ksh \
 	functional/crtime/setup.ksh \
-	functional/ctime/cleanup.ksh \
-	functional/ctime/ctime_001_pos.ksh \
-	functional/ctime/setup.ksh \
+	functional/crypto/icp_aes_ccm.ksh \
+	functional/crypto/icp_aes_gcm.ksh \
 	functional/deadman/deadman_ratelimit.ksh \
 	functional/deadman/deadman_sync.ksh \
 	functional/deadman/deadman_zio.ksh \
@@ -1435,11 +1442,14 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/dedup/setup.ksh \
 	functional/dedup/dedup_fdt_create.ksh \
 	functional/dedup/dedup_fdt_import.ksh \
+	functional/dedup/dedup_fdt_pacing.ksh \
 	functional/dedup/dedup_legacy_create.ksh \
 	functional/dedup/dedup_legacy_import.ksh \
 	functional/dedup/dedup_legacy_fdt_upgrade.ksh \
 	functional/dedup/dedup_legacy_fdt_mixed.ksh \
+	functional/dedup/dedup_prune.ksh \
 	functional/dedup/dedup_quota.ksh \
+	functional/dedup/dedup_zap_shrink.ksh \
 	functional/delegate/cleanup.ksh \
 	functional/delegate/setup.ksh \
 	functional/delegate/zfs_allow_001_pos.ksh \
@@ -1474,6 +1484,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/direct/dio_dedup.ksh \
 	functional/direct/dio_encryption.ksh \
 	functional/direct/dio_grow_block.ksh \
+	functional/direct/dio_loopback_dev.ksh \
 	functional/direct/dio_max_recordsize.ksh \
 	functional/direct/dio_mixed.ksh \
 	functional/direct/dio_mmap.ksh \
@@ -1524,6 +1535,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/fault/auto_spare_001_pos.ksh \
 	functional/fault/auto_spare_002_pos.ksh \
 	functional/fault/auto_spare_ashift.ksh \
+	functional/fault/auto_spare_double.ksh \
 	functional/fault/auto_spare_multiple.ksh \
 	functional/fault/auto_spare_shared.ksh \
 	functional/fault/cleanup.ksh \
@@ -1549,6 +1561,11 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/features/large_dnode/large_dnode_008_pos.ksh \
 	functional/features/large_dnode/large_dnode_009_pos.ksh \
 	functional/features/large_dnode/setup.ksh \
+	functional/gang_blocks/cleanup.ksh \
+	functional/gang_blocks/gang_blocks_001_pos.ksh \
+	functional/gang_blocks/gang_blocks_ddt_copies.ksh \
+	functional/gang_blocks/gang_blocks_redundant.ksh \
+	functional/gang_blocks/setup.ksh \
 	functional/grow/grow_pool_001_pos.ksh \
 	functional/grow/grow_replicas_001_pos.ksh \
 	functional/history/cleanup.ksh \
@@ -1693,6 +1710,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/pam/cleanup.ksh \
 	functional/pam/pam_basic.ksh \
 	functional/pam/pam_change_unmounted.ksh \
+	functional/pam/pam_mount_recursively.ksh \
 	functional/pam/pam_nounmount.ksh \
 	functional/pam/pam_recursive.ksh \
 	functional/pam/pam_short_password.ksh \
@@ -1747,10 +1765,18 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/projectquota/projectquota_007_pos.ksh \
 	functional/projectquota/projectquota_008_pos.ksh \
 	functional/projectquota/projectquota_009_pos.ksh \
+	functional/projectquota/defaultprojectquota_001_pos.ksh \
+	functional/projectquota/defaultprojectquota_002_pos.ksh \
+	functional/projectquota/defaultprojectquota_003_neg.ksh \
+	functional/projectquota/defaultprojectquota_004_pos.ksh \
+	functional/projectquota/defaultprojectquota_005_pos.ksh \
+	functional/projectquota/defaultprojectquota_006_pos.ksh \
+	functional/projectquota/defaultprojectquota_007_pos.ksh \
 	functional/projectquota/projectspace_001_pos.ksh \
 	functional/projectquota/projectspace_002_pos.ksh \
 	functional/projectquota/projectspace_003_pos.ksh \
 	functional/projectquota/projectspace_004_pos.ksh \
+	functional/projectquota/projectspace_005_pos.ksh \
 	functional/projectquota/projecttree_001_pos.ksh \
 	functional/projectquota/projecttree_002_pos.ksh \
 	functional/projectquota/projecttree_003_neg.ksh \
@@ -1849,6 +1875,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/removal/removal_with_export.ksh \
 	functional/removal/removal_with_faulted.ksh \
 	functional/removal/removal_with_ganging.ksh \
+	functional/removal/removal_with_hole.ksh \
 	functional/removal/removal_with_indirect.ksh \
 	functional/removal/removal_with_remove.ksh \
 	functional/removal/removal_with_scrub.ksh \
@@ -2049,6 +2076,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/stat/cleanup.ksh \
 	functional/stat/setup.ksh \
 	functional/stat/stat_001_pos.ksh \
+	functional/stat/statx_dioalign.ksh \
 	functional/suid/cleanup.ksh \
 	functional/suid/setup.ksh \
 	functional/suid/suid_write_to_none.ksh \
@@ -2085,7 +2113,21 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/userquota/groupspace_001_pos.ksh \
 	functional/userquota/groupspace_002_pos.ksh \
 	functional/userquota/groupspace_003_pos.ksh \
+	functional/userquota/groupspace_004_pos.ksh \
 	functional/userquota/setup.ksh \
+	functional/userquota/defaultuserquota_001_pos.ksh \
+	functional/userquota/defaultuserquota_002_pos.ksh \
+	functional/userquota/defaultuserquota_003_pos.ksh \
+	functional/userquota/defaultuserquota_004_neg.ksh \
+	functional/userquota/defaultuserquota_005_pos.ksh \
+	functional/userquota/defaultuserquota_006_pos.ksh \
+	functional/userquota/defaultuserquota_007_pos.ksh \
+	functional/userquota/defaultuserquota_008_pos.ksh \
+	functional/userquota/defaultuserquota_009_pos.ksh \
+	functional/userquota/defaultuserquota_010_neg.ksh \
+	functional/userquota/defaultuserquota_011_neg.ksh \
+	functional/userquota/defaultuserquota_012_neg.ksh \
+	functional/userquota/defaultuserquota_013_neg.ksh \
 	functional/userquota/userquota_001_pos.ksh \
 	functional/userquota/userquota_002_pos.ksh \
 	functional/userquota/userquota_003_pos.ksh \
@@ -2102,6 +2144,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/userquota/userspace_001_pos.ksh \
 	functional/userquota/userspace_002_pos.ksh \
 	functional/userquota/userspace_003_pos.ksh \
+	functional/userquota/userspace_004_pos.ksh \
 	functional/userquota/userspace_encrypted.ksh \
 	functional/userquota/userspace_send_encrypted.ksh \
 	functional/userquota/userspace_encrypted_13709.ksh \

@@ -50,7 +50,7 @@ options 	SOC_ROCKCHIP_RK3568
 options 	SOC_XILINX_ZYNQ
 
 # Timer drivers
-device		a10_timer
+device		aw_timer
 
 # Annapurna Alpine drivers
 device		al_ccu			# Alpine Cache Coherency Unit
@@ -96,6 +96,10 @@ device		ice_ddp		# Intel 800 Series DDP Package
 
 # Etherswitch devices
 device		e6000sw		# Marvell mv88e6085 based switches
+
+# Storage
+# Broadcom MPT Fusion, version 4, is 64-bit only
+device		mpi3mr			# LSI-Logic MPT-Fusion 4
 
 # MMC/SD/SDIO Card slot support
 device		sdhci_xenon		# Marvell Xenon SD/MMC controller

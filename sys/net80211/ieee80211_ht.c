@@ -317,9 +317,12 @@ static int
 ht_getrate(struct ieee80211com *ic, int index, enum ieee80211_phymode mode,
     int ratetype)
 {
+	struct ieee80211_node_txrate tr;
 	int mword, rate;
 
-	mword = ieee80211_rate2media(ic, index | IEEE80211_RATE_MCS, mode);
+	tr = IEEE80211_NODE_TXRATE_INIT_HT(index);
+
+	mword = ieee80211_rate2media(ic, &tr, mode);
 	if (IFM_SUBTYPE(mword) != IFM_IEEE80211_MCS)
 		return (0);
 	switch (ratetype) {
@@ -2589,6 +2592,11 @@ ht_recv_action_ba_delba(struct ieee80211_node *ni,
 	return 0;
 }
 
+/*
+ * Handle the HT channel width action frame.
+ *
+ * 802.11-2020 9.6.11.2 (Notify Channel Width frame format).
+ */
 static int
 ht_recv_action_ht_txchwidth(struct ieee80211_node *ni,
 	const struct ieee80211_frame *wh __unused,
@@ -2600,6 +2608,11 @@ ht_recv_action_ht_txchwidth(struct ieee80211_node *ni,
 	if ((ni->ni_htcap & IEEE80211_HTCAP_CHWIDTH40) == 0)
 		return (0);
 
+	/*
+	 * The supported values are either 0 (any supported width)
+	 * or 1 (HT20).  80, 160, etc MHz widths are not represented
+	 * here.
+	 */
 	chw = (frm[2] == IEEE80211_A_HT_TXCHWIDTH_2040) ?
 	    IEEE80211_STA_RX_BW_40 : IEEE80211_STA_RX_BW_20;
 

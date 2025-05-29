@@ -43,6 +43,7 @@
 
 #include <vm/vm.h>
 #include <vm/vm_pageout.h>
+#include <vm/vm_radix.h>
 
 static void
 tegra_bo_destruct(struct tegra_bo *bo)
@@ -62,7 +63,7 @@ tegra_bo_destruct(struct tegra_bo *bo)
 	vm_page_iter_init(&pages, bo->cdev_pager);
 	VM_OBJECT_WLOCK(bo->cdev_pager);
 	for (i = 0; i < bo->npages; i++) {
-		m = vm_page_iter_lookup(&pages, i);
+		m = vm_radix_iter_lookup(&pages, i);
 		vm_page_busy_acquire(m, 0);
 		cdev_mgtdev_pager_free_page(&pages, m);
 		m->flags &= ~PG_FICTITIOUS;
@@ -132,6 +133,7 @@ retry:
 static int
 tegra_bo_init_pager(struct tegra_bo *bo)
 {
+	struct pctrie_iter pages;
 	vm_page_t m;
 	size_t size;
 	int i;
@@ -142,6 +144,7 @@ tegra_bo_init_pager(struct tegra_bo *bo)
 	if (vmem_alloc(kernel_arena, size, M_WAITOK | M_BESTFIT, &bo->vbase))
 		return (ENOMEM);
 
+	vm_page_iter_init(&pages, bo->cdev_pager);
 	VM_OBJECT_WLOCK(bo->cdev_pager);
 	for (i = 0; i < bo->npages; i++) {
 		m = bo->m[i];
@@ -158,7 +161,7 @@ tegra_bo_init_pager(struct tegra_bo *bo)
 		 */
 		m->oflags &= ~VPO_UNMANAGED;
 		m->flags |= PG_FICTITIOUS;
-		if (vm_page_insert(m, bo->cdev_pager, i) != 0)
+		if (vm_page_iter_insert(m, bo->cdev_pager, i, &pages) != 0)
 			return (EINVAL);
 	}
 	VM_OBJECT_WUNLOCK(bo->cdev_pager);

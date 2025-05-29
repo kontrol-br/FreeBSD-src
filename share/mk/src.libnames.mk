@@ -7,7 +7,7 @@
 .endif
 
 .if !target(__<src.libnames.mk>__)
-__<src.libnames.mk>__:
+__<src.libnames.mk>__:	.NOTMAIN
 
 .include <src.opts.mk>
 
@@ -494,7 +494,7 @@ LDADD_${_l}_L+=		-L${LIB${_l:tu}DIR}
 .endif
 DPADD_${_l}?=	${LIB${_l:tu}}
 .if ${_PRIVATELIBS:M${_l}}
-LDADD_${_l}?=	-lprivate${_l}
+LDADD_${_l}?=	${LDADD_${_l}_L} -lprivate${_l}
 .elif ${_INTERNALLIBS:M${_l}}
 LDADD_${_l}?=	${LDADD_${_l}_L} -l${_l:S/${PIE_SUFFIX}//}${PIE_SUFFIX}
 .else
@@ -701,6 +701,9 @@ LIBWPAWPS?=	${LIBWPAWPSDIR}/libwpawps${PIE_SUFFIX}.a
 
 LIBC_NOSSP_PICDIR=	${_LIB_OBJTOP}/lib/libc
 LIBC_NOSSP_PIC?=	${LIBC_NOSSP_PICDIR}/libc_nossp_pic.a
+
+LIBSYS_PICDIR=	${_LIB_OBJTOP}/lib/libsys
+LIBSYS_PIC?=	${LIBSYS_PICDIR}/libsys_pic.a
 
 # Define a directory for each library.  This is useful for adding -L in when
 # not using a --sysroot or for meta mode bootstrapping when there is no

@@ -151,6 +151,7 @@ MAN=	aac.4 \
 	eventtimers.4 \
 	exca.4 \
 	ext2fs.4 \
+	e6000sw.4 \
 	e6060sw.4 \
 	fd.4 \
 	fdc.4 \
@@ -243,6 +244,7 @@ MAN=	aac.4 \
 	${_io.4} \
 	${_ioat.4} \
 	ip.4 \
+	ip17x.4 \
 	ip6.4 \
 	ipfirewall.4 \
 	ipheth.4 \
@@ -265,6 +267,7 @@ MAN=	aac.4 \
 	iwnfw.4 \
 	iwlwifi.4 \
 	iwlwififw.4 \
+	${_iwx.4} \
 	ix.4 \
 	ixl.4 \
 	jedec_dimm.4 \
@@ -338,6 +341,7 @@ MAN=	aac.4 \
 	msdosfs.4 \
 	msk.4 \
 	mtio.4 \
+	mtkswitch.4 \
 	multicast.4 \
 	muge.4 \
 	mvs.4 \
@@ -764,7 +768,9 @@ MLINKS+=ptnet.4 if_ptnet.4
 MLINKS+=ral.4 if_ral.4
 MLINKS+=re.4 if_re.4
 MLINKS+=rl.4 if_rl.4
-MLINKS+=rtwn_pci.4 if_rtwn_pci.4
+MLINKS+=rtw88.4 if_rtw88.4
+MLINKS+=rtw89.4 if_rtw89.4
+MLINKS+=rtwn.4 if_rtwn.4
 MLINKS+=rue.4 if_rue.4
 MLINKS+=scsi.4 cam.4
 MLINKS+=scsi.4 scbus.4
@@ -893,6 +899,7 @@ _xnb.4=		xnb.4
 
 .if ${MACHINE_CPUARCH} == "amd64"
 _ioat.4=	ioat.4
+_iwx.4=		iwx.4
 _nvdimm.4=	nvdimm.4
 _qlxge.4=	qlxge.4
 _qlxgb.4=	qlxgb.4
@@ -902,6 +909,7 @@ _sfxge.4=	sfxge.4
 _smartpqi.4=	smartpqi.4
 _sume.4=	sume.4
 
+MLINKS+=iwx.4 if_iwx.4
 MLINKS+=qlxge.4 if_qlxge.4
 MLINKS+=qlxgb.4 if_qlxgb.4
 MLINKS+=qlxgbe.4 if_qlxgbe.4
@@ -1007,6 +1015,7 @@ _pfsync.4=	pfsync.4
 
 .if ${MK_USB} != "no"
 MAN+=	\
+	mtw.4 \
 	otus.4 \
 	otusfw.4 \
 	rsu.4 \
@@ -1041,6 +1050,7 @@ MAN+=	\
 	uled.4 \
 	ulpt.4 \
 	umass.4 \
+	umb.4 \
 	umcs.4 \
 	umct.4 \
 	umodem.4 \
@@ -1064,6 +1074,7 @@ MAN+=	\
 	veriexec.4 \
 	zyd.4
 
+MLINKS+=mtw.4 if_mtw.4
 MLINKS+=otus.4 if_otus.4
 MLINKS+=rsu.4 if_rsu.4
 MLINKS+=rtwn_usb.4 if_rtwn_usb.4

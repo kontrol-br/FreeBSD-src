@@ -235,10 +235,9 @@ adhoc_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 				    ether_sprintf(ni->ni_bssid));
 				ieee80211_print_essid(vap->iv_bss->ni_essid,
 				    ni->ni_esslen);
-				/* XXX MCS/HT */
-				printf(" channel %d start %uMb\n",
+				printf(" channel %d start %uMbit/s\n",
 				    ieee80211_chan2ieee(ic, ic->ic_curchan),
-				    IEEE80211_RATE2MBS(ni->ni_txrate));
+				    ieee80211_node_get_txrate_kbit(ni) / 1000);
 			}
 #endif
 			break;
@@ -396,7 +395,8 @@ adhoc_input(struct ieee80211_node *ni, struct mbuf *m,
 		     (subtype == IEEE80211_FC0_SUBTYPE_BEACON ||
 		      subtype == IEEE80211_FC0_SUBTYPE_PROBE_RESP)) &&
 		    !IEEE80211_ADDR_EQ(bssid, vap->iv_bss->ni_bssid) &&
-		    !IEEE80211_ADDR_EQ(bssid, ifp->if_broadcastaddr)) {
+		    !IEEE80211_ADDR_EQ(bssid,
+		        ieee80211_vap_get_broadcast_address(vap))) {
 			/* not interested in */
 			IEEE80211_DISCARD_MAC(vap, IEEE80211_MSG_INPUT,
 			    bssid, NULL, "%s", "not to bss");
@@ -662,7 +662,8 @@ adhoc_input(struct ieee80211_node *ni, struct mbuf *m,
 	case IEEE80211_FC0_TYPE_CTL:
 		vap->iv_stats.is_rx_ctl++;
 		IEEE80211_NODE_STAT(ni, rx_ctrl);
-		vap->iv_recv_ctl(ni, m, subtype);
+		if (ieee80211_is_ctl_frame_for_vap(ni, m))
+			vap->iv_recv_ctl(ni, m, subtype);
 		goto out;
 
 	default:

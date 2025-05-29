@@ -11,6 +11,7 @@ FORTIFY_SOURCE=	0
 MK_CTF=		no
 MK_SSP=		no
 MK_PIE=		no
+MK_ZEROREGS=	no
 MAN=
 .if !defined(PIC)
 NO_PIC=
@@ -257,4 +258,6 @@ ${_ILINKS}: .NOMETA
 	${ECHO} ${.TARGET} "->" $$path ; \
 	ln -fns $$path ${.TARGET}
 .endif # !NO_OBJ
+
+.-include "local.defs.mk"
 .endif # __BOOT_DEFS_MK__
