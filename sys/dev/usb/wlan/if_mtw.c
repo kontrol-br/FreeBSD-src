@@ -516,7 +516,7 @@ mtw_attach(device_t self)
 	struct ieee80211com *ic = &sc->sc_ic;
 	uint32_t ver;
 	int i, ret;
-	//	uint32_t tmp;
+	uint32_t tmp;
 	uint8_t iface_index;
 	int ntries, error;
 
@@ -579,6 +579,11 @@ mtw_attach(device_t self)
 		goto detach;
 	}
 
+
+	if (mtw_read(sc, MTW_MAC_VER_ID, &tmp) != 0)
+		goto detach;
+	sc->mac_rev = tmp & 0xffff;
+
 	mtw_load_microcode(sc);
 	ret = msleep(&sc->fwloading, &sc->sc_mtx, 0, "fwload", 3 * hz);
 	if (ret == EWOULDBLOCK || sc->fwloading != 1) {
@@ -633,6 +638,7 @@ mtw_attach(device_t self)
 
 	ic->ic_flags |= IEEE80211_F_DATAPAD;
 	ic->ic_flags_ext |= IEEE80211_FEXT_SWBMISS;
+	ic->ic_flags_ext |= IEEE80211_FEXT_SEQNO_OFFLOAD;
 
 	mtw_getradiocaps(ic, IEEE80211_CHAN_MAX, &ic->ic_nchans,
 	    ic->ic_channels);
@@ -3126,6 +3132,8 @@ mtw_tx(struct mtw_softc *sc, struct mbuf *m, struct ieee80211_node *ni)
 	data->ni = ni;
 	data->ridx = ridx;
 
+	ieee80211_output_seqno_assign(ni, -1, m);
+
 	mtw_set_tx_desc(sc, data);
 
 	/*
@@ -3384,6 +3392,8 @@ mtw_tx_param(struct mtw_softc *sc, struct mbuf *m, struct ieee80211_node *ni,
 		if (rt2860_rates[ridx].rate == rate)
 			break;
 	data->ridx = ridx;
+
+	ieee80211_output_seqno_assign(ni, -1, m);
 
 	mtw_set_tx_desc(sc, data);
 

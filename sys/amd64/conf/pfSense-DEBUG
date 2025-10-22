@@ -10,6 +10,7 @@ nooptions	COMPAT_FREEBSD4	# Compatible with FreeBSD4
 nooptions	COMPAT_FREEBSD5	# Compatible with FreeBSD5
 nooptions	COMPAT_FREEBSD6	# Compatible with FreeBSD6
 nooptions	COMPAT_FREEBSD7	# Compatible with FreeBSD7
+nooptions 	COMPAT_FREEBSD9	# Compatible with FreeBSD9
 
 options 	GEOM_MIRROR
 options 	GEOM_UZIP
@@ -106,6 +107,7 @@ options 	NETGRAPH		#netgraph(4) system
 options 	NETGRAPH_VLAN
 options 	NETGRAPH_L2TP
 options 	NETGRAPH_BPF
+options 	NETGRAPH_ETF
 options 	NETGRAPH_ETHER
 options 	NETGRAPH_IFACE
 options 	NETGRAPH_EIFACE
@@ -170,7 +172,8 @@ options 	MROUTING
 # Additional cards
 device		mxge		# mxge - Myricom Myri10GE 10 Gigabit Ethernet adapter driver
 device		cxgb		# cxgb -- Chelsio T3 10 Gigabit Ethernet adapter driver
-device		cxgbe		# cxgbe -- Chelsio T5 10 Gigabit Ethernet adapter driver
+device		cxgbe		# cxgbe -- Chelsio T4-, T5-, and T6-based 100Gb, 40Gb, 25Gb, 10Gb, and 1Gb Ethernet adapter driver
+device		cxgbev	# cxgbev -- Chelsio T4-, T5-, and T6-based 100Gb, 40Gb, 25Gb, 10Gb, and 1Gb Ethernet VF driver
 #device		nve		# nVidia nForce MCP on-board Ethernet Networking
 device		oce
 device  	mlxfw

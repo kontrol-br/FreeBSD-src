@@ -64,6 +64,7 @@ extern u_long sb_max_adj;
 extern int nfsrv_pnfsatime;
 extern int nfsrv_maxpnfsmirror;
 extern uint32_t nfs_srvmaxio;
+extern int nfsrv_issuedelegs;
 
 static int	nfs_async = 0;
 SYSCTL_DECL(_vfs_nfsd);
@@ -240,7 +241,7 @@ nfsrvd_getattr(struct nfsrv_descript *nd, int isdgram,
 {
 	struct nfsvattr nva;
 	fhandle_t fh;
-	int at_root = 0, error = 0, supports_nfsv4acls;
+	int at_root = 0, error = 0, ret, supports_nfsv4acls;
 	struct nfsreferral *refp;
 	nfsattrbit_t attrbits, tmpbits;
 	struct mount *mp;
@@ -249,6 +250,10 @@ nfsrvd_getattr(struct nfsrv_descript *nd, int isdgram,
 	uint64_t mounted_on_fileno = 0;
 	accmode_t accmode;
 	struct thread *p = curthread;
+	size_t atsiz;
+	long pathval;
+	bool has_hiddensystem, has_namedattr, xattrsupp;
+	uint32_t clone_blksize;
 
 	if (nd->nd_repstat)
 		goto out;
@@ -306,13 +311,38 @@ nfsrvd_getattr(struct nfsrv_descript *nd, int isdgram,
 				    &nva, &attrbits, p);
 			if (nd->nd_repstat == 0) {
 				supports_nfsv4acls = nfs_supportsnfsv4acls(vp);
+				xattrsupp = false;
+				if (NFSISSET_ATTRBIT(&attrbits,
+				    NFSATTRBIT_XATTRSUPPORT)) {
+					ret = VOP_GETEXTATTR(vp,
+					    EXTATTR_NAMESPACE_USER,
+					    "xxx", NULL, &atsiz, nd->nd_cred,
+					    p);
+					xattrsupp = ret != EOPNOTSUPP;
+				}
+				if (VOP_PATHCONF(vp, _PC_HAS_HIDDENSYSTEM,
+				    &pathval) != 0)
+					pathval = 0;
+				has_hiddensystem = pathval > 0;
+				pathval = 0;
+				if (NFSISSET_ATTRBIT(&attrbits,
+				    NFSATTRBIT_NAMEDATTR) &&
+				    VOP_PATHCONF(vp, _PC_HAS_NAMEDATTR,
+				    &pathval) != 0)
+					pathval = 0;
+				has_namedattr = pathval > 0;
+				pathval = 0;
+				if (VOP_PATHCONF(vp, _PC_CLONE_BLKSIZE,
+				    &pathval) != 0)
+					pathval = 0;
+				clone_blksize = pathval;
 				mp = vp->v_mount;
 				if (nfsrv_enable_crossmntpt != 0 &&
 				    vp->v_type == VDIR &&
 				    (vp->v_vflag & VV_ROOT) != 0 &&
 				    vp != rootvnode) {
 					tvp = mp->mnt_vnodecovered;
-					VREF(tvp);
+					vref(tvp);
 					at_root = 1;
 				} else
 					at_root = 0;
@@ -339,7 +369,9 @@ nfsrvd_getattr(struct nfsrv_descript *nd, int isdgram,
 					(void)nfsvno_fillattr(nd, mp, vp, &nva,
 					    &fh, 0, &attrbits, nd->nd_cred, p,
 					    isdgram, 1, supports_nfsv4acls,
-					    at_root, mounted_on_fileno);
+					    at_root, mounted_on_fileno,
+					    xattrsupp, has_hiddensystem,
+					    has_namedattr, clone_blksize);
 					vfs_unbusy(mp);
 				}
 				vrele(vp);
@@ -402,8 +434,10 @@ nfsrvd_setattr(struct nfsrv_descript *nd, __unused int isdgram,
 	if (error)
 		goto nfsmout;
 
-	/* For NFSv4, only va_uid is used from nva2. */
+	/* For NFSv4, only va_uid and va_flags is used from nva2. */
 	NFSSETBIT_ATTRBIT(&retbits, NFSATTRBIT_OWNER);
+	NFSSETBIT_ATTRBIT(&retbits, NFSATTRBIT_HIDDEN);
+	NFSSETBIT_ATTRBIT(&retbits, NFSATTRBIT_SYSTEM);
 	preat_ret = nfsvno_getattr(vp, &nva2, nd, p, 1, &retbits);
 	if (!nd->nd_repstat)
 		nd->nd_repstat = preat_ret;
@@ -462,6 +496,9 @@ nfsrvd_setattr(struct nfsrv_descript *nd, __unused int isdgram,
 		    &nva, &attrbits, exp, p);
 
 	if (!nd->nd_repstat && (nd->nd_flag & ND_NFSV4)) {
+	    u_long oldflags;
+
+	    oldflags = nva2.na_flags;
 	    /*
 	     * For V4, try setting the attributes in sets, so that the
 	     * reply bitmap will be correct for an error case.
@@ -529,6 +566,32 @@ nfsrvd_setattr(struct nfsrv_descript *nd, __unused int isdgram,
 			NFSSETBIT_ATTRBIT(&retbits, NFSATTRBIT_MODE);
 		    if (NFSISSET_ATTRBIT(&attrbits, NFSATTRBIT_MODESETMASKED))
 			NFSSETBIT_ATTRBIT(&retbits, NFSATTRBIT_MODESETMASKED);
+		}
+	    }
+	    if (!nd->nd_repstat &&
+		(NFSISSET_ATTRBIT(&attrbits, NFSATTRBIT_HIDDEN) ||
+		 NFSISSET_ATTRBIT(&attrbits, NFSATTRBIT_SYSTEM))) {
+		if (NFSISSET_ATTRBIT(&attrbits, NFSATTRBIT_HIDDEN)) {
+		    if ((nva.na_flags & UF_HIDDEN) != 0)
+			oldflags |= UF_HIDDEN;
+		    else
+			oldflags &= ~UF_HIDDEN;
+		}
+		if (NFSISSET_ATTRBIT(&attrbits, NFSATTRBIT_SYSTEM)) {
+		    if ((nva.na_flags & UF_SYSTEM) != 0)
+			oldflags |= UF_SYSTEM;
+		    else
+			oldflags &= ~UF_SYSTEM;
+		}
+		NFSVNO_ATTRINIT(&nva2);
+		NFSVNO_SETATTRVAL(&nva2, flags, oldflags);
+		nd->nd_repstat = nfsvno_setattr(vp, &nva2, nd->nd_cred, p,
+		    exp);
+		if (!nd->nd_repstat) {
+		    if (NFSISSET_ATTRBIT(&attrbits, NFSATTRBIT_HIDDEN))
+			NFSSETBIT_ATTRBIT(&retbits, NFSATTRBIT_HIDDEN);
+		    if (NFSISSET_ATTRBIT(&attrbits, NFSATTRBIT_SYSTEM))
+			NFSSETBIT_ATTRBIT(&retbits, NFSATTRBIT_SYSTEM);
 		}
 	    }
 
@@ -1599,14 +1662,14 @@ nfsrvd_remove(struct nfsrv_descript *nd, __unused int isdgram,
 				nd->nd_repstat = nfsvno_rmdirsub(&named, 1,
 				    nd->nd_cred, p, exp);
 			else
-				nd->nd_repstat = nfsvno_removesub(&named, 1,
-				    nd->nd_cred, p, exp);
+				nd->nd_repstat = nfsvno_removesub(&named, true,
+				    nd, p, exp);
 		} else if (nd->nd_procnum == NFSPROC_RMDIR) {
 			nd->nd_repstat = nfsvno_rmdirsub(&named, 0,
 			    nd->nd_cred, p, exp);
 		} else {
-			nd->nd_repstat = nfsvno_removesub(&named, 0,
-			    nd->nd_cred, p, exp);
+			nd->nd_repstat = nfsvno_removesub(&named, false, nd, p,
+			    exp);
 		}
 	}
 	if (!(nd->nd_flag & ND_NFSV2)) {
@@ -1703,7 +1766,7 @@ nfsrvd_rename(struct nfsrv_descript *nd, int isdgram,
 
 		/* If this is the same file handle, just VREF() the vnode. */
 		if (!NFSBCMP(tfh.nfsrvfh_data, &fh, NFSX_MYFH)) {
-			VREF(dp);
+			vref(dp);
 			tdp = dp;
 			tnes = *exp;
 			tdirfor_ret = nfsvno_getattr(tdp, &tdirfor, nd, p, 1,
@@ -1770,8 +1833,7 @@ nfsrvd_rename(struct nfsrv_descript *nd, int isdgram,
 	if (fromnd.ni_vp->v_type == VDIR)
 		tond.ni_cnd.cn_flags |= WILLBEDIR;
 	nd->nd_repstat = nfsvno_namei(nd, &tond, tdp, 0, &tnes, &tdirp);
-	nd->nd_repstat = nfsvno_rename(&fromnd, &tond, nd->nd_repstat,
-	    nd->nd_flag, nd->nd_cred, p);
+	nd->nd_repstat = nfsvno_rename(&fromnd, &tond, nd, p);
 	if (fdirp)
 		fdiraft_ret = nfsvno_getattr(fdirp, &fdiraft, nd, p, 0, NULL);
 	if (tdirp)
@@ -2867,6 +2929,8 @@ nfsrvd_open(struct nfsrv_descript *nd, __unused int isdgram,
 	NFSACL_T *aclp = NULL;
 	struct thread *p = curthread;
 	bool done_namei;
+	__enum_uint8_decl(wdelegace) { USENONE, USEMODE, USENFSV4ACL }
+	    delegace;
 
 #ifdef NFS4_ACL_EXTATTR_NAME
 	aclp = acl_alloc(M_WAITOK);
@@ -2874,6 +2938,7 @@ nfsrvd_open(struct nfsrv_descript *nd, __unused int isdgram,
 #endif
 	NFSZERO_ATTRBIT(&attrbits);
 	done_namei = false;
+	delegace = USEMODE;
 	named.ni_cnd.cn_nameiop = 0;
 	NFSM_DISSECT(tl, u_int32_t *, 6 * NFSX_UNSIGNED);
 	i = fxdr_unsigned(int, *(tl + 5));
@@ -3215,6 +3280,25 @@ nfsrvd_open(struct nfsrv_descript *nd, __unused int isdgram,
 
 	if (!nd->nd_repstat)
 		nd->nd_repstat = nfsvno_getattr(vp, &nva, nd, p, 1, NULL);
+
+	if (nd->nd_repstat == 0 && aclp != NULL && nfsrv_issuedelegs != 0 &&
+	    (dp->v_mount->mnt_flag & MNT_NFS4ACLS) != 0) {
+		if (aclp->acl_cnt == 0 && create == NFSV4OPEN_NOCREATE) {
+			int retacl;
+
+			/* We do not yet have an ACL, so try and get one. */
+			retacl = VOP_GETACL(vp, ACL_TYPE_NFS4, aclp,
+			    nd->nd_cred, p);
+			if (retacl != 0 && retacl != ENOATTR &&
+			    retacl != EOPNOTSUPP && retacl != EINVAL)
+				delegace = USENONE;
+			else if (retacl == 0 && aclp->acl_cnt > 0)
+				delegace = USENFSV4ACL;
+		} else if (aclp->acl_cnt > 0 && create == NFSV4OPEN_CREATE) {
+			delegace = USENFSV4ACL;
+		}
+	}
+
 	/*
 	 * Do the open locking/delegation stuff.
 	 */
@@ -3307,18 +3391,56 @@ nfsrvd_open(struct nfsrv_descript *nd, __unused int isdgram,
 				*tl++ = txdr_unsigned(NFSV4OPEN_LIMITSIZE);
 				txdr_hyper(nva.na_size, tl);
 			}
-			NFSM_BUILD(tl, u_int32_t *, 3 * NFSX_UNSIGNED);
-			*tl++ = txdr_unsigned(NFSV4ACE_ALLOWEDTYPE);
-			*tl++ = txdr_unsigned(0x0);
-			acemask = NFSV4ACE_ALLFILESMASK;
-			if (nva.na_mode & S_IRUSR)
-			    acemask |= NFSV4ACE_READMASK;
-			if (nva.na_mode & S_IWUSR)
-			    acemask |= NFSV4ACE_WRITEMASK;
-			if (nva.na_mode & S_IXUSR)
-			    acemask |= NFSV4ACE_EXECUTEMASK;
-			*tl = txdr_unsigned(acemask);
-			(void) nfsm_strtom(nd, "OWNER@", 6);
+
+			/* Set up the write delegation ACE. */
+			NFSM_BUILD(tl, uint32_t *, 3 * NFSX_UNSIGNED);
+			if (delegace == USENFSV4ACL) {
+				int j;
+
+				for (j = 0; j < aclp->acl_cnt; j++) {
+					if (aclp->acl_entry[j].ae_tag ==
+					    ACL_USER_OBJ ||
+					    aclp->acl_entry[j].ae_entry_type !=
+					    ACL_ENTRY_TYPE_ALLOW)
+						break;
+				}
+				if (j < aclp->acl_cnt &&
+				    aclp->acl_entry[j].ae_tag ==
+				    ACL_USER_OBJ &&
+				    aclp->acl_entry[j].ae_entry_type ==
+				    ACL_ENTRY_TYPE_ALLOW) {
+					/* Use this ACE. */
+					*tl++ = txdr_unsigned(
+					    NFSV4ACE_ALLOWEDTYPE);
+					*tl++ = txdr_unsigned(0x0);
+					*tl = txdr_unsigned(
+					    nfs_aceperm(
+					    aclp->acl_entry[j].ae_perm));
+					(void)nfsm_strtom(nd, "OWNER@", 6);
+				} else
+					delegace = USENONE;
+			}
+			if (delegace == USENONE) {
+				/* Don't allow anything. */
+				*tl++ = 0x0;
+				*tl++ = 0x0;
+				*tl = 0x0;
+				NFSM_BUILD(tl, uint32_t *, NFSX_UNSIGNED);
+				*tl = 0;
+			} else if (delegace == USEMODE) {
+				/* Build from mode. */
+				*tl++ = txdr_unsigned(NFSV4ACE_ALLOWEDTYPE);
+				*tl++ = txdr_unsigned(0x0);
+				acemask = NFSV4ACE_ALLFILESMASK;
+				if (nva.na_mode & S_IRUSR)
+					acemask |= NFSV4ACE_READMASK;
+				if (nva.na_mode & S_IWUSR)
+					acemask |= NFSV4ACE_WRITEMASK;
+				if (nva.na_mode & S_IXUSR)
+					acemask |= NFSV4ACE_EXECUTEMASK;
+				*tl = txdr_unsigned(acemask);
+				(void)nfsm_strtom(nd, "OWNER@", 6);
+			}
 		}
 		*vpp = vp;
 	} else if (vp) {
@@ -4231,7 +4353,7 @@ nfsrvd_verify(struct nfsrv_descript *nd, int isdgram,
 	if (!nd->nd_repstat) {
 		nfsvno_getfs(&fs, isdgram);
 		error = nfsv4_loadattr(nd, vp, &nva, NULL, &fh, fhsize, NULL,
-		    sf, NULL, &fs, NULL, 1, &ret, NULL, NULL, NULL, p,
+		    sf, NULL, &fs, NULL, 1, &ret, NULL, NULL, NULL, NULL, p,
 		    nd->nd_cred);
 		if (!error) {
 			if (nd->nd_procnum == NFSV4OP_NVERIFY) {
@@ -4262,9 +4384,10 @@ nfsrvd_openattr(struct nfsrv_descript *nd, __unused int isdgram,
 	int error = 0;
 
 	NFSNAMEICNDSET(&cn, nd->nd_cred, LOOKUP, OPENNAMED | ISLASTCN |
-	    NOFOLLOW);
+	    NOFOLLOW | LOCKLEAF);
 	cn.cn_nameptr = ".";
 	cn.cn_namelen = 1;
+	cn.cn_lkflags = LK_SHARED;
 	NFSM_DISSECT(tl, uint32_t *, NFSX_UNSIGNED);
 	if (*tl == newnfs_true)
 		cn.cn_flags |= CREATENAMED;
@@ -4283,6 +4406,8 @@ nfsrvd_openattr(struct nfsrv_descript *nd, __unused int isdgram,
 		if (nd->nd_repstat == ENOATTR)
 			nd->nd_repstat = NFSERR_NOENT;
 	}
+	if (nd->nd_repstat == 0)
+		NFSVOPUNLOCK(*vpp);
 
 	vput(dp);
 	NFSEXITCODE2(0, nd);
@@ -5879,6 +6004,212 @@ nfsrvd_copy_file_range(struct nfsrv_descript *nd, __unused int isdgram,
 		*tl++ = newnfs_true;
 		*tl = newnfs_true;
 	}
+out:
+	vrele(vp);
+	vrele(tovp);
+	NFSEXITCODE2(error, nd);
+	return (error);
+nfsmout:
+	vput(vp);
+	vrele(tovp);
+	NFSEXITCODE2(error, nd);
+	return (error);
+}
+
+/*
+ * nfs clone service
+ */
+int
+nfsrvd_clone(struct nfsrv_descript *nd, __unused int isdgram,
+    vnode_t vp, vnode_t tovp, struct nfsexstuff *exp, struct nfsexstuff *toexp)
+{
+	uint32_t *tl;
+	struct nfsvattr at;
+	int error = 0, ret;
+	off_t inoff, outoff;
+	uint64_t len;
+	size_t xfer;
+	struct nfsstate inst, outst, *instp = &inst, *outstp = &outst;
+	struct nfslock inlo, outlo, *inlop = &inlo, *outlop = &outlo;
+	nfsquad_t clientid;
+	nfsv4stateid_t stateid;
+	nfsattrbit_t attrbits;
+	void *rl_rcookie, *rl_wcookie;
+	long pathval;
+
+	rl_rcookie = rl_wcookie = NULL;
+	pathval = 0;
+	if (nfsrv_maxcopyrange == 0 || nfsrv_devidcnt > 0 ||
+	    VOP_PATHCONF(vp, _PC_CLONE_BLKSIZE, &pathval) != 0 ||
+	    pathval == 0) {
+		/*
+		 * For a pNFS server, reply NFSERR_NOTSUPP so that the client
+		 * will not do the clone and will do I/O on the DS(s).
+		 * If vfs.nfsd.maxcopyrange set to 0, disable Clone.
+		 */
+		nd->nd_repstat = NFSERR_NOTSUPP;
+		goto nfsmout;
+	}
+	NFSM_DISSECT(tl, uint32_t *, 2 * NFSX_STATEID + 3 * NFSX_HYPER);
+	instp->ls_flags = (NFSLCK_CHECK | NFSLCK_READACCESS);
+	inlop->lo_flags = NFSLCK_READ;
+	instp->ls_ownerlen = 0;
+	instp->ls_op = NULL;
+	instp->ls_uid = nd->nd_cred->cr_uid;
+	instp->ls_stateid.seqid = fxdr_unsigned(uint32_t, *tl++);
+	clientid.lval[0] = instp->ls_stateid.other[0] = *tl++;
+	clientid.lval[1] = instp->ls_stateid.other[1] = *tl++;
+	if ((nd->nd_flag & ND_IMPLIEDCLID) != 0)
+		clientid.qval = nd->nd_clientid.qval;
+	instp->ls_stateid.other[2] = *tl++;
+	outstp->ls_flags = (NFSLCK_CHECK | NFSLCK_WRITEACCESS);
+	outlop->lo_flags = NFSLCK_WRITE;
+	outstp->ls_ownerlen = 0;
+	outstp->ls_op = NULL;
+	outstp->ls_uid = nd->nd_cred->cr_uid;
+	outstp->ls_stateid.seqid = fxdr_unsigned(uint32_t, *tl++);
+	outstp->ls_stateid.other[0] = *tl++;
+	outstp->ls_stateid.other[1] = *tl++;
+	outstp->ls_stateid.other[2] = *tl++;
+	inoff = fxdr_hyper(tl); tl += 2;
+	inlop->lo_first = inoff;
+	outoff = fxdr_hyper(tl); tl += 2;
+	outlop->lo_first = outoff;
+	len = fxdr_hyper(tl);
+	if (len == 0) {
+		/* len == 0 means to EOF. */
+		inlop->lo_end = OFF_MAX;
+		outlop->lo_end = OFF_MAX;
+	} else {
+		inlop->lo_end = inlop->lo_first + len;
+		outlop->lo_end = outlop->lo_first + len;
+	}
+
+	if ((inoff > OFF_MAX || outoff > OFF_MAX ||
+	    inlop->lo_end > OFF_MAX || outlop->lo_end > OFF_MAX ||
+	    inlop->lo_end < inlop->lo_first || outlop->lo_end <
+	    outlop->lo_first))
+		nd->nd_repstat = NFSERR_INVAL;
+
+	if (nd->nd_repstat == 0 && vp->v_type != VREG)
+		nd->nd_repstat = NFSERR_WRONGTYPE;
+
+	/* Check permissions for the input file. */
+	NFSZERO_ATTRBIT(&attrbits);
+	NFSSETBIT_ATTRBIT(&attrbits, NFSATTRBIT_OWNER);
+	ret = nfsvno_getattr(vp, &at, nd, curthread, 1, &attrbits);
+	if (nd->nd_repstat == 0)
+		nd->nd_repstat = ret;
+	if (nd->nd_repstat == 0 && (at.na_uid != nd->nd_cred->cr_uid ||
+	     NFSVNO_EXSTRICTACCESS(exp)))
+		nd->nd_repstat = nfsvno_accchk(vp, VREAD, nd->nd_cred, exp,
+		    curthread, NFSACCCHK_ALLOWOWNER, NFSACCCHK_VPISLOCKED,
+		    NULL);
+	if (nd->nd_repstat == 0)
+		nd->nd_repstat = nfsrv_lockctrl(vp, &instp, &inlop, NULL,
+		    clientid, &stateid, exp, nd, curthread);
+	if (vp != tovp) {
+		NFSVOPUNLOCK(vp);
+		if (nd->nd_repstat != 0)
+			goto out;
+
+		error = NFSVOPLOCK(tovp, LK_SHARED);
+		if (error != 0)
+			goto out;
+		pathval = 0;
+		if (VOP_PATHCONF(tovp, _PC_CLONE_BLKSIZE, &pathval) != 0 ||
+		    pathval == 0)
+			nd->nd_repstat = NFSERR_NOTSUPP;
+		else if (tovp->v_type != VREG)
+			nd->nd_repstat = NFSERR_WRONGTYPE;
+	}
+
+	/* For the output file, we only need the Owner attribute. */
+	ret = nfsvno_getattr(tovp, &at, nd, curthread, 1, &attrbits);
+	if (nd->nd_repstat == 0)
+		nd->nd_repstat = ret;
+	if (nd->nd_repstat == 0 && (at.na_uid != nd->nd_cred->cr_uid ||
+	     NFSVNO_EXSTRICTACCESS(exp)))
+		nd->nd_repstat = nfsvno_accchk(tovp, VWRITE, nd->nd_cred, toexp,
+		    curthread, NFSACCCHK_ALLOWOWNER, NFSACCCHK_VPISLOCKED,
+		    NULL);
+	if (nd->nd_repstat == 0)
+		nd->nd_repstat = nfsrv_lockctrl(tovp, &outstp, &outlop, NULL,
+		    clientid, &stateid, toexp, nd, curthread);
+	NFSVOPUNLOCK(tovp);
+
+	/* Range lock the byte ranges for both invp and outvp. */
+	if (nd->nd_repstat == 0) {
+		for (;;) {
+			if (len == 0)
+				rl_wcookie = vn_rangelock_wlock(tovp, outoff,
+				    OFF_MAX);
+			else
+				rl_wcookie = vn_rangelock_wlock(tovp, outoff,
+				    outoff + len);
+			if (vp != tovp) {
+				if (len == 0)
+					rl_rcookie = vn_rangelock_tryrlock(vp,
+					    inoff, OFF_MAX);
+				else
+					rl_rcookie = vn_rangelock_tryrlock(vp,
+					    inoff, inoff + len);
+				if (rl_rcookie != NULL)
+					break;
+			} else {
+				rl_rcookie = NULL;
+				break;
+			}
+			vn_rangelock_unlock(tovp, rl_wcookie);
+			if (len == 0)
+				rl_rcookie = vn_rangelock_rlock(vp, inoff,
+				    OFF_MAX);
+			else
+				rl_rcookie = vn_rangelock_rlock(vp, inoff,
+				    inoff + len);
+			vn_rangelock_unlock(vp, rl_rcookie);
+		}
+
+		error = NFSVOPLOCK(vp, LK_SHARED);
+		if (error == 0) {
+			ret = nfsvno_getattr(vp, &at, nd, curthread, 1, NULL);
+			if (ret == 0) {
+				/*
+				 * Since invp is range locked, na_size should
+				 * not change.
+				 */
+				if (len == 0 && at.na_size > inoff)
+					len = SSIZE_MAX;	/* To EOF. */
+				else if (inoff + len > at.na_size)
+					nd->nd_repstat = NFSERR_INVAL;
+			}
+			NFSVOPUNLOCK(vp);
+			if (ret != 0 && nd->nd_repstat == 0)
+				nd->nd_repstat = ret;
+		} else if (nd->nd_repstat == 0)
+			nd->nd_repstat = error;
+	}
+
+	/*
+	 * Do the actual copy to an upper limit of vfs.nfsd.maxcopyrange.
+	 * This size limit can be set to limit the time a copy RPC will
+	 * take.
+	 */
+	xfer = len;
+	if (nd->nd_repstat == 0) {
+		nd->nd_repstat = vn_copy_file_range(vp, &inoff, tovp, &outoff,
+		    &xfer, COPY_FILE_RANGE_CLONE, nd->nd_cred, nd->nd_cred,
+		    NULL);
+		if (nd->nd_repstat == ENOSYS)
+			nd->nd_repstat = NFSERR_INVAL;
+	}
+
+	/* Unlock the ranges. */
+	if (rl_rcookie != NULL)
+		vn_rangelock_unlock(vp, rl_rcookie);
+	if (rl_wcookie != NULL)
+		vn_rangelock_unlock(tovp, rl_wcookie);
+
 out:
 	vrele(vp);
 	vrele(tovp);

@@ -258,6 +258,8 @@
     ..
     gssapi
     ..
+    gssrpc
+    ..
     infiniband
         complib
         ..
@@ -274,7 +276,7 @@
     ..
     kadm5
     ..
-    krb5
+    krb5                tags=package=kerberos-dev
     ..
     lib80211
     ..

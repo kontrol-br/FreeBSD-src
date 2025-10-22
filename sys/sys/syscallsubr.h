@@ -60,6 +60,7 @@ struct rusage;
 struct sched_param;
 struct sembuf;
 union semun;
+struct shmfd;
 struct sockaddr;
 struct spacectl_range;
 struct stat;
@@ -210,7 +211,8 @@ int	kern_kevent_fp(struct thread *td, struct file *fp, int nchanges,
 	    int nevents, struct kevent_copyops *k_ops,
 	    const struct timespec *timeout);
 int	kern_kill(struct thread *td, pid_t pid, int signum);
-int	kern_kqueue(struct thread *td, int flags, struct filecaps *fcaps);
+int	kern_kqueue(struct thread *td, int flags, bool cponfork,
+	    struct filecaps *fcaps);
 int	kern_kldload(struct thread *td, const char *file, int *fileid);
 int	kern_kldstat(struct thread *td, int fileid, struct kld_file_stat *stat);
 int	kern_kldunload(struct thread *td, int fileid, int flags);
@@ -257,6 +259,7 @@ int	kern_munlock(struct thread *td, uintptr_t addr, size_t size);
 int	kern_munmap(struct thread *td, uintptr_t addr, size_t size);
 int     kern_nanosleep(struct thread *td, struct timespec *rqt,
 	    struct timespec *rmt);
+int	kern_nosys(struct thread *td, int dummy);
 int	kern_ntp_adjtime(struct thread *td, struct timex *ntv, int *retvalp);
 int	kern_ogetdirentries(struct thread *td, struct ogetdirentries_args *uap,
 	    long *ploff);
@@ -336,7 +339,7 @@ int	kern_shm_open(struct thread *td, const char *userpath, int flags,
 	    mode_t mode, struct filecaps *fcaps);
 int	kern_shm_open2(struct thread *td, const char *path, int flags,
 	    mode_t mode, int shmflags, struct filecaps *fcaps,
-	    const char *name);
+	    const char *name, struct shmfd *shmfd);
 int	kern_shmat(struct thread *td, int shmid, const void *shmaddr,
 	    int shmflg);
 int	kern_shmctl(struct thread *td, int shmid, int cmd, void *buf,

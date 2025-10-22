@@ -50,6 +50,7 @@
 #include <sys/rwlock.h>
 #include <sys/mman.h>
 #include <sys/stack.h>
+#include <sys/stdarg.h>
 #include <sys/sysent.h>
 #include <sys/time.h>
 #include <sys/user.h>
@@ -60,8 +61,6 @@
 #include <vm/vm_page.h>
 #include <vm/vm_pager.h>
 #include <vm/vm_radix.h>
-
-#include <machine/stdarg.h>
 
 #if defined(__i386__) || defined(__amd64__)
 #include <machine/cputypes.h>
@@ -1172,12 +1171,14 @@ static const struct filterops linux_dev_kqfiltops_read = {
 	.f_isfd = 1,
 	.f_detach = linux_file_kqfilter_detach,
 	.f_event = linux_file_kqfilter_read_event,
+	.f_copy = knote_triv_copy,
 };
 
 static const struct filterops linux_dev_kqfiltops_write = {
 	.f_isfd = 1,
 	.f_detach = linux_file_kqfilter_detach,
 	.f_event = linux_file_kqfilter_write_event,
+	.f_copy = knote_triv_copy,
 };
 
 static void
@@ -2121,7 +2122,7 @@ add_timer_on(struct timer_list *timer, int cpu)
 }
 
 int
-del_timer(struct timer_list *timer)
+timer_delete(struct timer_list *timer)
 {
 
 	if (callout_stop(&(timer)->callout) == -1)
@@ -2130,19 +2131,12 @@ del_timer(struct timer_list *timer)
 }
 
 int
-del_timer_sync(struct timer_list *timer)
+timer_delete_sync(struct timer_list *timer)
 {
 
 	if (callout_drain(&(timer)->callout) == -1)
 		return (0);
 	return (1);
-}
-
-int
-timer_delete_sync(struct timer_list *timer)
-{
-
-	return (del_timer_sync(timer));
 }
 
 int

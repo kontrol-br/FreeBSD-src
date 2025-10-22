@@ -39,12 +39,35 @@
 
 #define	VIRT_BITS	48
 
+/*
+ * Loads a 64-bit value into reg using 1 to 4 mov/movk instructions.
+ * This can be used early on when we don't know the CPUs endianness.
+ */
+.macro	mov_q reg, val
+	mov	\reg, :abs_g0_nc:\val
+.if (\val >> 16) & 0xffff != 0
+	movk	\reg, :abs_g1_nc:\val
+.endif
+.if (\val >> 32) & 0xffff != 0
+	movk	\reg, :abs_g2_nc:\val
+.endif
+.if (\val >> 48) & 0xffff != 0
+	movk	\reg, :abs_g3:\val
+.endif
+.endm
+
 #if PAGE_SIZE == PAGE_SIZE_16K
 /*
  * The number of level 3 tables to create. 32 will allow for 1G of address
  * space, the same as a single level 2 page with 4k pages.
  */
 #define	L3_PAGE_COUNT	32
+#elif PAGE_SIZE == PAGE_SIZE_4K
+/*
+ * Space for a level 3 table holding the end of the executable memory and
+ * the start of the non-executable data.
+ */
+#define	L3_PAGE_COUNT	1
 #endif
 
 /*
@@ -84,7 +107,6 @@ ENTRY(_start)
 	/*
 	 * At this point:
 	 * x27 = TTBR0 table
-	 * x26 = Kernel L1 table
 	 * x24 = TTBR1 table
 	 * x22 = PTE shareability attributes
 	 * x21 = BTI guarded page attribute if supported
@@ -314,22 +336,28 @@ LEND(mpentry_common)
  *  - Configure EL2 to support running the kernel at EL1 and exit to that
  */
 LENTRY(enter_kernel_el)
-#define	INIT_SCTLR_EL1	(SCTLR_LSMAOE | SCTLR_nTLSMD | SCTLR_EIS | \
-    SCTLR_TSCXT | SCTLR_EOS)
 	mrs	x23, CurrentEL
 	and	x23, x23, #(CURRENTEL_EL_MASK)
 	cmp	x23, #(CURRENTEL_EL_EL2)
 	b.eq	1f
 
-	ldr	x2, =INIT_SCTLR_EL1
+	/*
+	 * Ensure there are no memory operations here. If the boot loader
+	 * enters the kernel in big-endian mode then loading sctlr will
+	 * be incorrect. As instructions are the same in both endians it is
+	 * safe to use mov instructions.
+	 */
+	mov_q	x2, SCTLR_MMU_OFF
 	msr	sctlr_el1, x2
-	/* SCTLR_EOS is set so eret is a context synchronizing event so we
+	/*
+	 * SCTLR_EOS is set to make eret a context synchronizing event. We
 	 * need an isb here to ensure it's observed by later instructions,
 	 * but don't need it in the eret below.
 	 */
 	isb
 
-	/* Ensure SPSR_EL1 and pstate are in sync. The only wat to set the
+	/*
+	 * Ensure SPSR_EL1 and pstate are in sync. The only way to set the
 	 * latter is to set the former and return from an exception with eret.
 	 */
 	mov	x2, #(PSR_DAIF | PSR_M_EL1h)
@@ -343,13 +371,21 @@ LENTRY(enter_kernel_el)
 	 * Set just the reserved bits in sctlr_el2. This will disable the
 	 * MMU which may have broken the kernel if we enter the kernel in
 	 * EL2, e.g. when using VHE.
+	 *
+	 * As with sctlr_el1 above use mov instructions to ensure there are
+	 * no memory operations.
 	 */
-	ldr	x2, =(SCTLR_EL2_RES1 | SCTLR_EL2_EIS | SCTLR_EL2_EOS)
+	mov_q	x2, (SCTLR_EL2_RES1 | SCTLR_EL2_EIS | SCTLR_EL2_EOS)
 	msr	sctlr_el2, x2
 	isb
 
+	/*
+	 * The hardware is now in little-endian mode so memory operations
+	 * are safe.
+	 */
+
 	/* Configure the Hypervisor */
-	ldr	x2, =(HCR_RW | HCR_APK | HCR_API | HCR_E2H)
+	ldr	x2, =(HCR_RW | HCR_APK | HCR_API)
 	msr	hcr_el2, x2
 
 	/* Stash value of HCR_EL2 for later */
@@ -365,24 +401,24 @@ LENTRY(enter_kernel_el)
 	msr	vmpidr_el2, x2
 
 	/* Set the initial sctlr_el1 */
-	ldr	x2, =INIT_SCTLR_EL1
+	ldr	x2, =SCTLR_MMU_OFF
 	msr	sctlr_el1, x2
 
-	/* Check if the E2H flag is set */
-	tst	x4, #HCR_E2H
-	b.eq	.Lno_vhe
+	/* Check for VHE */
+	CHECK_CPU_FEAT(x2, ID_AA64MMFR1, VH, IMPL, .Lno_vhe)
 
 	/*
 	 * The kernel will be running in EL2, route exceptions here rather
 	 * than EL1.
 	 */
-	orr	x4, x4, #(HCR_TGE)
+	orr	x4, x4, #HCR_E2H
+	orr	x4, x4, #HCR_TGE
 	msr	hcr_el2, x4
 	isb
 
 	msr	SCTLR_EL12_REG, x2
 	mov	x2, xzr /* CPTR_EL2 is managed by vfp.c */
-	ldr	x3, =(CNTHCTL_E2H_EL1PCTEN | CNTHCTL_E2H_EL1PTEN)
+	ldr	x3, =(CNTHCTL_E2H_EL1PCTEN_NOTRAP | CNTHCTL_E2H_EL1PTEN_NOTRAP)
 	ldr	x5, =(PSR_DAIF | PSR_M_EL2h)
 	b	.Ldone_vhe
 
@@ -393,7 +429,7 @@ LENTRY(enter_kernel_el)
 	msr	vbar_el2, x2
 
 	ldr	x2, =(CPTR_RES1)
-	ldr	x3, =(CNTHCTL_EL1PCTEN | CNTHCTL_EL1PCEN)
+	ldr	x3, =(CNTHCTL_EL1PCTEN_NOTRAP | CNTHCTL_EL1PCEN_NOTRAP)
 	ldr	x5, =(PSR_DAIF | PSR_M_EL1h)
 
 .Ldone_vhe:
@@ -408,10 +444,9 @@ LENTRY(enter_kernel_el)
 	 * Configure the Extended Hypervisor register. This is only valid if
 	 * FEAT_HCX is enabled.
 	 */
-	CHECK_CPU_FEAT(x2, ID_AA64MMFR1, HCX, 2f)
+	CHECK_CPU_FEAT(x2, ID_AA64MMFR1, HCX, IMPL, 2f)
 	/* Extended Hypervisor Configuration */
-	mov x2, xzr
-	msr HCRX_EL2_REG, x2
+	msr	HCRX_EL2_REG, xzr
 	isb
 2:
 
@@ -425,7 +460,7 @@ LENTRY(enter_kernel_el)
 	msr	vttbr_el2, xzr
 
 	/* Check the CPU supports GIC, and configure the CPU interface */
-	CHECK_CPU_FEAT(x2, ID_AA64PFR0, GIC, 3f)
+	CHECK_CPU_FEAT(x2, ID_AA64PFR0, GIC, CPUIF_EN, 3f)
 
 	mrs	x2, icc_sre_el2
 	orr	x2, x2, #ICC_SRE_EL2_EN	/* Enable access from insecure EL1 */
@@ -438,7 +473,6 @@ LENTRY(enter_kernel_el)
 	isb
 
 	eret
-#undef INIT_SCTLR_EL1
 LEND(enter_kernel_el)
 
 /*
@@ -481,7 +515,6 @@ LENTRY(create_pagetables)
 	/* Clean the page table */
 	adrp	x6, pagetable
 	add	x6, x6, :lo12:pagetable
-	mov	x26, x6
 	adrp	x27, pagetable_end
 	add	x27, x27, :lo12:pagetable_end
 1:
@@ -591,60 +624,119 @@ common:
 	 * with 2M alignment.
 	 */
 #define	PTE_SHIFT	L3_SHIFT
+#define	LL_PAGE_TABLE	pagetable_l3_ttbr1
 #define	BUILD_PTE_FUNC	build_l3_page_pagetable
 #else
 #define	PTE_SHIFT	L2_SHIFT
+#define	LL_PAGE_TABLE	pagetable_l2_ttbr1
 #define	BUILD_PTE_FUNC	build_l2_block_pagetable
 #endif
 
 	/* Get the number of blocks/pages to allocate, rounded down */
-	lsr	x10, x8, #(PTE_SHIFT)
+	lsr	x14, x8, #(PTE_SHIFT)
 
-	/* Create the kernel space PTE table */
-	mov	x6, x26
-	mov	x7, #(ATTR_S1_IDX(VM_MEMATTR_WRITE_BACK))
-	mov	x8, #(KERNBASE)
-	mov	x9, x28
-	bl	BUILD_PTE_FUNC
-
-#undef PTE_SHIFT
-#undef BUILD_PTE_FUNC
-
+	ldr	x26, =etext
 #if PAGE_SIZE != PAGE_SIZE_4K
-	/* Move to the l2 table */
-	ldr	x9, =(PAGE_SIZE * L3_PAGE_COUNT)
-	add	x26, x26, x9
+	ldr	x8, =((1 << PTE_SHIFT) - 1)
+	add	x26, x26, x8
+#endif
+	mov	x8, #(KERNBASE)
+	sub	x25, x26, x8
+	lsr	x25, x25, #(PTE_SHIFT)
+
+#if PAGE_SIZE == PAGE_SIZE_4K
+	/* Calculate the number of executable level 3 pages to create */
+	lsr	x26, x26, #(L3_SHIFT)
+	bfc	x26, #(Ln_ENTRIES_SHIFT), #(64 - Ln_ENTRIES_SHIFT)
+
+	/* Build the L3 table holding the end of the exectuable code */
+	lsl	x15, x25, #(PTE_SHIFT)
+	adrp	x6, pagetable_l3_ttbr1
+	add	x6, x6, :lo12:pagetable_l3_ttbr1
+	ldr	x7, =(ATTR_S1_IDX(VM_MEMATTR_WRITE_BACK) | \
+	    ATTR_S1_AP(ATTR_S1_AP_RO))
+	ldr	x8, =(KERNBASE)
+	add	x8, x8, x15
+	add	x9, x28, x15
+	mov	x10, x26
+	bl	build_l3_page_pagetable
+
+	/* Build the remaining level 3 pages */
+	ldr	x7, =(ATTR_S1_IDX(VM_MEMATTR_WRITE_BACK) | ATTR_S1_XN)
+	lsl	x27, x26, #(L3_SHIFT)
+	add	x8, x8, x27
+	add	x9, x28, x15
+	add	x9, x9, x27
+	ldr	x10, =(Ln_ENTRIES)
+	sub	x10, x10, x26
+	bl	build_l3_page_pagetable
 
 	/* Link the l2 -> l3 table */
 	mov	x9, x6
-	mov	x6, x26
+	adrp	x6, pagetable_l2_ttbr1
+	add	x6, x6, :lo12:pagetable_l2_ttbr1
 	bl	link_l2_pagetable
 #endif
 
-	/* Move to the l1 table */
-	add	x26, x26, #PAGE_SIZE
+	/* Create the kernel space PTE table */
+	adrp	x6, LL_PAGE_TABLE
+	add	x6, x6, :lo12:LL_PAGE_TABLE
+	ldr	x7, =(ATTR_S1_IDX(VM_MEMATTR_WRITE_BACK) | \
+	    ATTR_S1_AP(ATTR_S1_AP_RO))
+	mov	x8, #(KERNBASE)
+	mov	x9, x28
+	mov	x10, x25
+	bl	BUILD_PTE_FUNC
+
+#if PAGE_SIZE == PAGE_SIZE_4K
+	/* Skip memory mapped through the L2 table */
+	add	x25, x25, #1
+#endif
+
+	/* Create the kernel space XN PTE table */
+	lsl	x10, x25, #(PTE_SHIFT)
+	ldr	x7, =(ATTR_S1_IDX(VM_MEMATTR_WRITE_BACK) | ATTR_S1_XN)
+	ldr	x8, =(KERNBASE)
+	add	x8, x8, x10
+	add	x9, x28, x10
+	sub	x10, x14, x25
+	bl	BUILD_PTE_FUNC
+
+#undef PTE_SHIFT
+#undef LL_PAGE_TABLE
+#undef BUILD_PTE_FUNC
+
+#if PAGE_SIZE != PAGE_SIZE_4K
+	/* Link the l2 -> l3 table */
+	mov	x9, x6
+	adrp	x6, pagetable_l2_ttbr1
+	add	x6, x6, :lo12:pagetable_l2_ttbr1
+	bl	link_l2_pagetable
+#endif
 
 	/* Link the l1 -> l2 table */
 	mov	x9, x6
-	mov	x6, x26
+	adrp	x6, pagetable_l1_ttbr1
+	add	x6, x6, :lo12:pagetable_l1_ttbr1
 	bl	link_l1_pagetable
-
-	/* Move to the l0 table */
-	add	x24, x26, #PAGE_SIZE
 
 	/* Link the l0 -> l1 table */
 	mov	x9, x6
-	mov	x6, x24
+	adrp	x6, pagetable_l0_ttbr1
+	add	x6, x6, :lo12:pagetable_l0_ttbr1
 	mov	x10, #1
 	bl	link_l0_pagetable
+
+	/* Save the TTBR1 table physical address */
+	mov	x24, x6
 
 	/*
 	 * Build the TTBR0 maps.  As TTBR0 maps, they must specify ATTR_S1_nG.
 	 * They are only needed early on, so the VA = PA map is uncached.
 	 */
-	add	x27, x24, #PAGE_SIZE
 
-	mov	x6, x27		/* The initial page table */
+	adrp	x6, pagetable_l2_ttbr0_bootstrap
+	add	x6, x6, :lo12:pagetable_l2_ttbr0_bootstrap
 
 	/* Create the VA = PA map */
 	mov	x7, #(ATTR_S1_nG | ATTR_S1_IDX(VM_MEMATTR_WRITE_BACK))
@@ -692,22 +784,21 @@ common:
 1:
 #endif
 
-	/* Move to the l1 table */
-	add	x27, x27, #PAGE_SIZE
-
 	/* Link the l1 -> l2 table */
 	mov	x9, x6
-	mov	x6, x27
+	adrp	x6, pagetable_l1_ttbr0_bootstrap
+	add	x6, x6, :lo12:pagetable_l1_ttbr0_bootstrap
 	bl	link_l1_pagetable
-
-	/* Move to the l0 table */
-	add	x27, x27, #PAGE_SIZE
 
 	/* Link the l0 -> l1 table */
 	mov	x9, x6
-	mov	x6, x27
+	adrp	x6, pagetable_l0_ttbr0_bootstrap
+	add	x6, x6, :lo12:pagetable_l0_ttbr0_bootstrap
 	mov	x10, #1
 	bl	link_l0_pagetable
+
+	/* Save the TTBR0 table physical address */
+	mov	x27, x6
 
 	/* Restore the Link register */
 	mov	x30, x5
@@ -823,7 +914,6 @@ LENTRY(build_l2_block_pagetable)
 	ret
 LEND(build_l2_block_pagetable)
 
-#if PAGE_SIZE != PAGE_SIZE_4K
 /*
  * Builds an L2 -> L3 table descriptor
  *
@@ -867,6 +957,7 @@ LEND(link_l2_pagetable)
  * VA start (x8) modulo L3C_SIZE must equal PA start (x9) modulo L3C_SIZE.
  */
 LENTRY(build_l3_page_pagetable)
+	cbz	x10, 2f
 	/*
 	 * Build the L3 table entry.
 	 */
@@ -906,10 +997,10 @@ LENTRY(build_l3_page_pagetable)
 	add	x11, x11, #1
 	add	x9, x9, #1
 	cbnz	x10, 1b
+2:
 
 	ret
 LEND(build_l3_page_pagetable)
-#endif
 
 LENTRY(start_mmu)
 	dsb	sy
@@ -967,7 +1058,7 @@ LENTRY(start_mmu)
 	 * HW management of dirty state is set in C code as it may
 	 * need to be disabled because of CPU errata.
 	 */
-	CHECK_CPU_FEAT(x3, ID_AA64MMFR1, HAFDBS, 1f)
+	CHECK_CPU_FEAT(x3, ID_AA64MMFR1, HAFDBS, AF, 1f)
 	orr	x2, x2, #(TCR_HA)
 1:
 
@@ -976,11 +1067,7 @@ LENTRY(start_mmu)
 	/*
 	 * Setup SCTLR.
 	 */
-	ldr	x2, sctlr_set
-	ldr	x3, sctlr_clear
-	mrs	x1, sctlr_el1
-	bic	x1, x1, x3	/* Clear the required bits */
-	orr	x1, x1, x2	/* Set the required bits */
+	ldr	x1, =SCTLR_MMU_ON
 	msr	sctlr_el1, x1
 	isb
 
@@ -1005,16 +1092,6 @@ tcr:
 	.quad (TCR_TxSZ(64 - VIRT_BITS) | TCR_TG |			\
 	    TCR_SH1_IS | TCR_ORGN1_WBWA | TCR_IRGN1_WBWA |		\
 	    TCR_SH0_IS | TCR_ORGN0_WBWA | TCR_IRGN0_WBWA)
-sctlr_set:
-	/* Bits to set */
-	.quad (SCTLR_LSMAOE | SCTLR_nTLSMD | SCTLR_UCI | SCTLR_SPAN | \
-	    SCTLR_nTWE | SCTLR_nTWI | SCTLR_UCT | SCTLR_DZE | \
-	    SCTLR_I | SCTLR_SED | SCTLR_SA0 | SCTLR_SA | SCTLR_C | \
-	    SCTLR_M | SCTLR_CP15BEN | SCTLR_BT1 | SCTLR_BT0)
-sctlr_clear:
-	/* Bits to clear */
-	.quad (SCTLR_EE | SCTLR_E0E | SCTLR_IESB | SCTLR_WXN | SCTLR_UMA | \
-	    SCTLR_ITD | SCTLR_A)
 LEND(start_mmu)
 
 ENTRY(abort)
@@ -1040,10 +1117,9 @@ initstack_end:
 	 */
 	.globl pagetable_l0_ttbr1
 pagetable:
-#if PAGE_SIZE != PAGE_SIZE_4K
+pagetable_l3_ttbr1:
 	.space	(PAGE_SIZE * L3_PAGE_COUNT)
 pagetable_l2_ttbr1:
-#endif
 	.space	PAGE_SIZE
 pagetable_l1_ttbr1:
 	.space	PAGE_SIZE

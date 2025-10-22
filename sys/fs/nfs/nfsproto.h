@@ -411,10 +411,13 @@
 /* Do a NFSv4 Openattr. */
 #define	NFSPROC_OPENATTR	70
 
+/* Do a NFSv4.2 Clone. */
+#define	NFSPROC_CLONE		71
+
 /*
  * Must be defined as one higher than the last NFSv4.2 Proc# above.
  */
-#define	NFSV42_NPROCS		71
+#define	NFSV42_NPROCS		72
 
 /* Value of NFSV42_NPROCS for old nfsstats structure. (Always 69) */
 #define	NFSV42_OLDNPROCS	69
@@ -1142,6 +1145,7 @@ struct nfsv3_sattr {
  	NFSATTRBM_FILESFREE |						\
  	NFSATTRBM_FILESTOTAL |						\
 	NFSATTRBM_FSLOCATIONS |						\
+	NFSATTRBM_HIDDEN |						\
  	NFSATTRBM_HOMOGENEOUS |						\
  	NFSATTRBM_MAXFILESIZE |						\
  	NFSATTRBM_MAXLINK |						\
@@ -1163,6 +1167,7 @@ struct nfsv3_sattr {
  	NFSATTRBM_SPACEFREE |						\
  	NFSATTRBM_SPACETOTAL |						\
  	NFSATTRBM_SPACEUSED |						\
+	NFSATTRBM_SYSTEM |						\
  	NFSATTRBM_TIMEACCESS |						\
  	NFSATTRBM_TIMECREATE |						\
  	NFSATTRBM_TIMEDELTA |						\
@@ -1192,6 +1197,7 @@ struct nfsv3_sattr {
 	NFSATTRBM_LAYOUTBLKSIZE |					\
 	NFSATTRBM_LAYOUTALIGNMENT |					\
 	NFSATTRBM_SUPPATTREXCLCREAT |					\
+	NFSATTRBM_CLONEBLKSIZE |					\
 	NFSATTRBM_CHANGEATTRTYPE |					\
 	NFSATTRBM_XATTRSUPPORT)
 
@@ -1210,11 +1216,13 @@ struct nfsv3_sattr {
  */
 #define	NFSATTRBIT_SETABLE0						\
 	(NFSATTRBM_SIZE |						\
+	NFSATTRBM_HIDDEN |						\
 	NFSATTRBM_ACL)
 #define	NFSATTRBIT_SETABLE1						\
  	(NFSATTRBM_MODE |						\
  	NFSATTRBM_OWNER |						\
  	NFSATTRBM_OWNERGROUP |						\
+	NFSATTRBM_SYSTEM |						\
  	NFSATTRBM_TIMECREATE |						\
  	NFSATTRBM_TIMEACCESSSET |					\
  	NFSATTRBM_TIMEMODIFYSET)
@@ -1238,7 +1246,8 @@ struct nfsv3_sattr {
  * NFSATTRBIT_NFSV42 - Attributes only supported by NFSv4.2.
  */
 #define	NFSATTRBIT_NFSV42_2						\
-	(NFSATTRBM_CHANGEATTRTYPE |					\
+	(NFSATTRBM_CLONEBLKSIZE |					\
+	NFSATTRBM_CHANGEATTRTYPE |					\
 	NFSATTRBM_XATTRSUPPORT |					\
 	NFSATTRBM_MODEUMASK)
 
@@ -1254,6 +1263,7 @@ struct nfsv3_sattr {
  	NFSATTRBM_SIZE |						\
  	NFSATTRBM_FSID |						\
  	NFSATTRBM_FILEID |						\
+	NFSATTRBM_HIDDEN |						\
  	NFSATTRBM_MAXREAD)
 
 /*
@@ -1266,6 +1276,7 @@ struct nfsv3_sattr {
  	NFSATTRBM_OWNERGROUP |						\
  	NFSATTRBM_RAWDEV |						\
  	NFSATTRBM_SPACEUSED |						\
+	NFSATTRBM_SYSTEM |						\
  	NFSATTRBM_TIMEACCESS |						\
 	NFSATTRBM_TIMECREATE |						\
  	NFSATTRBM_TIMEMETADATA |					\
@@ -1288,6 +1299,7 @@ struct nfsv3_sattr {
  	NFSATTRBM_SIZE |						\
  	NFSATTRBM_FSID |						\
  	NFSATTRBM_FILEID |						\
+	NFSATTRBM_HIDDEN |						\
  	NFSATTRBM_MAXREAD)
 
 /*
@@ -1298,6 +1310,7 @@ struct nfsv3_sattr {
  	NFSATTRBM_NUMLINKS |						\
  	NFSATTRBM_RAWDEV |						\
  	NFSATTRBM_SPACEUSED |						\
+	NFSATTRBM_SYSTEM |						\
  	NFSATTRBM_TIMEACCESS |						\
 	NFSATTRBM_TIMECREATE |						\
  	NFSATTRBM_TIMEMETADATA |					\
@@ -1407,7 +1420,7 @@ struct nfsv3_sattr {
 /*
  * NFSGETATTRBIT_STATFS2 - bits 64<->95
  */
-#define	NFSGETATTRBIT_STATFS2		0
+#define	NFSGETATTRBIT_STATFS2	(NFSATTRBM_CLONEBLKSIZE)
 
 /*
  * Set of attributes for the equivalent of an nfsv3 pathconf rpc.
@@ -1430,7 +1443,7 @@ struct nfsv3_sattr {
 /*
  * NFSGETATTRBIT_PATHCONF2 - bits 64<->95
  */
-#define	NFSGETATTRBIT_PATHCONF2		0
+#define	NFSGETATTRBIT_PATHCONF2	(NFSATTRBM_CLONEBLKSIZE)
 
 /*
  * Sets of attributes required by readdir and readdirplus.

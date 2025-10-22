@@ -156,6 +156,8 @@ linux64_arch_copyout_auxargs(struct image_params *imgp, Elf_Auxinfo **pos)
 	AUXARGS_ENTRY((*pos), LINUX_AT_SYSINFO_EHDR, linux_vdso_base);
 	AUXARGS_ENTRY((*pos), LINUX_AT_HWCAP, *imgp->sysent->sv_hwcap);
 	AUXARGS_ENTRY((*pos), LINUX_AT_HWCAP2, *imgp->sysent->sv_hwcap2);
+	AUXARGS_ENTRY((*pos), LINUX_AT_HWCAP3, *imgp->sysent->sv_hwcap3);
+	AUXARGS_ENTRY((*pos), LINUX_AT_HWCAP4, *imgp->sysent->sv_hwcap4);
 	AUXARGS_ENTRY((*pos), LINUX_AT_PLATFORM, PTROUT(linux_platform));
 }
 
@@ -458,6 +460,8 @@ struct sysentvec elf_linux_sysvec = {
 	.sv_trap	= NULL,
 	.sv_hwcap	= &linux_elf_hwcap,
 	.sv_hwcap2	= &linux_elf_hwcap2,
+	.sv_hwcap3	= &linux_elf_hwcap3,
+	.sv_hwcap4	= &linux_elf_hwcap4,
 	.sv_onexec	= linux_on_exec_vmspace,
 	.sv_onexit	= linux_on_exit,
 	.sv_ontdexit	= linux_thread_dtor,
@@ -580,7 +584,7 @@ linux_vdso_reloc(char *mapping, Elf_Addr offset)
 	}
 }
 
-static Elf_Brandnote linux64_brandnote = {
+static const Elf_Brandnote linux64_brandnote = {
 	.hdr.n_namesz	= sizeof(GNU_ABI_VENDOR),
 	.hdr.n_descsz	= 16,
 	.hdr.n_type	= 1,
@@ -589,7 +593,7 @@ static Elf_Brandnote linux64_brandnote = {
 	.trans_osrel	= linux_trans_osrel
 };
 
-static Elf64_Brandinfo linux_glibc2brand = {
+static const Elf64_Brandinfo linux_glibc2brand = {
 	.brand		= ELFOSABI_LINUX,
 	.machine	= EM_AARCH64,
 	.compat_3_brand	= "Linux",
@@ -600,7 +604,7 @@ static Elf64_Brandinfo linux_glibc2brand = {
 	.flags		= BI_CAN_EXEC_DYN | BI_BRAND_NOTE
 };
 
-Elf64_Brandinfo *linux_brandlist[] = {
+const Elf64_Brandinfo *linux_brandlist[] = {
 	&linux_glibc2brand,
 	NULL
 };
@@ -608,8 +612,8 @@ Elf64_Brandinfo *linux_brandlist[] = {
 static int
 linux64_elf_modevent(module_t mod, int type, void *data)
 {
-	Elf64_Brandinfo **brandinfo;
-	struct linux_ioctl_handler**lihp;
+	const Elf64_Brandinfo **brandinfo;
+	struct linux_ioctl_handler **lihp;
 	int error;
 
 	error = 0;

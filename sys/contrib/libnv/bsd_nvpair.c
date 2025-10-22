@@ -42,9 +42,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/errno.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
+#include <sys/stdarg.h>
 #include <sys/systm.h>
-
-#include <machine/stdarg.h>
 
 #else
 #include <errno.h>
@@ -986,13 +985,13 @@ nvpair_unpack_string_array(bool isbe __unused, nvpair_t *nvp,
 	size = nvp->nvp_datasize;
 	tmp = (const char *)ptr;
 	for (ii = 0; ii < nvp->nvp_nitems; ii++) {
-		len = strnlen(tmp, size - 1) + 1;
-		size -= len;
-		if (tmp[len - 1] != '\0') {
+		if (size <= 0) {
 			ERRNO_SET(EINVAL);
 			return (NULL);
 		}
-		if (size < 0) {
+		len = strnlen(tmp, size - 1) + 1;
+		size -= len;
+		if (tmp[len - 1] != '\0') {
 			ERRNO_SET(EINVAL);
 			return (NULL);
 		}

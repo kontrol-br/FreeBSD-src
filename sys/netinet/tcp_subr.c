@@ -82,6 +82,7 @@
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/ip_var.h>
+#include <netinet/icmp_var.h>
 #ifdef INET6
 #include <netinet/icmp6.h>
 #include <netinet/ip6.h>
@@ -644,14 +645,14 @@ out:
 static int
 sysctl_net_inet_default_tcp_functions(SYSCTL_HANDLER_ARGS)
 {
-	int error = ENOENT;
 	struct tcp_function_set fs;
 	struct tcp_function_block *blk;
+	int error;
 
-	memset(&fs, 0, sizeof(fs));
+	memset(&fs, 0, sizeof(struct tcp_function_set));
 	rw_rlock(&tcp_function_lock);
 	blk = find_tcp_fb_locked(V_tcp_func_set_ptr, NULL);
-	if (blk) {
+	if (blk != NULL) {
 		/* Found him */
 		strcpy(fs.function_set_name, blk->tfb_tcp_block_name);
 		fs.pcbcnt = blk->tfb_refcnt;
@@ -1032,10 +1033,6 @@ tcp_default_fb_init(struct tcpcb *tp, void **ptr)
 	/* We don't use the pointer */
 	*ptr = NULL;
 
-	KASSERT(tp->t_state < TCPS_TIME_WAIT,
-	    ("%s: connection %p in unexpected state %d", __func__, tp,
-	    tp->t_state));
-
 	/* Make sure we get no interesting mbuf queuing behavior */
 	/* All mbuf queue/ack compress flags should be off */
 	tcp_lro_features_off(tp);
@@ -1052,7 +1049,8 @@ tcp_default_fb_init(struct tcpcb *tp, void **ptr)
 	if (tp->t_rxtshift == 0)
 		tp->t_rxtcur = rexmt;
 	else
-		TCPT_RANGESET(tp->t_rxtcur, rexmt, tp->t_rttmin, TCPTV_REXMTMAX);
+		TCPT_RANGESET(tp->t_rxtcur, rexmt, tp->t_rttmin,
+		    tcp_rexmit_max);
 
 	/*
 	 * Nothing to do for ESTABLISHED or LISTEN states. And, we don't
@@ -1454,6 +1452,7 @@ tcp_vnet_init(void *arg __unused)
 	VNET_PCPUSTAT_ALLOC(tcpstat, M_WAITOK);
 
 	V_tcp_msl = TCPTV_MSL;
+	V_tcp_msl_local = TCPTV_MSL_LOCAL;
 	arc4rand(&V_ts_offset_secret, sizeof(V_ts_offset_secret), 0);
 }
 VNET_SYSINIT(tcp_vnet_init, SI_SUB_PROTO_DOMAIN, SI_ORDER_FOURTH,
@@ -1473,11 +1472,8 @@ tcp_init(void *arg __unused)
 	tcp_keepintvl = TCPTV_KEEPINTVL;
 	tcp_maxpersistidle = TCPTV_KEEP_IDLE;
 	tcp_rexmit_initial = TCPTV_RTOBASE;
-	if (tcp_rexmit_initial < 1)
-		tcp_rexmit_initial = 1;
 	tcp_rexmit_min = TCPTV_MIN;
-	if (tcp_rexmit_min < 1)
-		tcp_rexmit_min = 1;
+	tcp_rexmit_max = TCPTV_REXMTMAX;
 	tcp_persmin = TCPTV_PERSMIN;
 	tcp_persmax = TCPTV_PERSMAX;
 	tcp_rexmit_slop = TCPTV_CPU_VAR;
@@ -2152,38 +2148,57 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 }
 
 /*
+ * Check that no more than V_tcp_ack_war_cnt per V_tcp_ack_war_time_window
+ * are sent. *epoch_end is the end of the current epoch and is updated, if the
+ * current epoch ended in the past. *ack_cnt is the counter used during the
+ * current epoch. It might be reset and incremented.
+ * The function returns true if a challenge ACK should be sent.
+ */
+bool
+tcp_challenge_ack_check(sbintime_t *epoch_end, uint32_t *ack_cnt)
+{
+	sbintime_t now;
+
+	/*
+	 * The sending of a challenge ACK could be triggered by a blind attacker
+	 * to detect an existing TCP connection. To mitigate that, increment
+	 * also the global counter which would be incremented if the attacker
+	 * would have guessed wrongly.
+	 */
+	(void)badport_bandlim(BANDLIM_TCP_RST);
+
+	if (V_tcp_ack_war_time_window == 0 || V_tcp_ack_war_cnt == 0) {
+		/* ACK war protection is disabled. */
+		return (true);
+	} else {
+		/* Start new epoch, if the previous one is already over. */
+		now = getsbinuptime();
+		if (*epoch_end < now) {
+			*ack_cnt = 0;
+			*epoch_end = now + V_tcp_ack_war_time_window * SBT_1MS;
+		}
+		/*
+		 * Send a challenge ACK, if less than tcp_ack_war_cnt have been
+		 * sent in the current epoch.
+		 */
+		if (*ack_cnt < V_tcp_ack_war_cnt) {
+			(*ack_cnt)++;
+			return (true);
+		} else {
+			return (false);
+		}
+	}
+}
+
+/*
  * Send a challenge ack (no data, no SACK option), but not more than
  * V_tcp_ack_war_cnt per V_tcp_ack_war_time_window (per TCP connection).
  */
 void
 tcp_send_challenge_ack(struct tcpcb *tp, struct tcphdr *th, struct mbuf *m)
 {
-	sbintime_t now;
-	bool send_challenge_ack;
-
-	if (V_tcp_ack_war_time_window == 0 || V_tcp_ack_war_cnt == 0) {
-		/* ACK war protection is disabled. */
-		send_challenge_ack = true;
-	} else {
-		/* Start new epoch, if the previous one is already over. */
-		now = getsbinuptime();
-		if (tp->t_challenge_ack_end < now) {
-			tp->t_challenge_ack_cnt = 0;
-			tp->t_challenge_ack_end = now +
-			    V_tcp_ack_war_time_window * SBT_1MS;
-		}
-		/*
-		 * Send a challenge ACK, if less than tcp_ack_war_cnt have been
-		 * sent in the current epoch.
-		 */
-		if (tp->t_challenge_ack_cnt < V_tcp_ack_war_cnt) {
-			send_challenge_ack = true;
-			tp->t_challenge_ack_cnt++;
-		} else {
-			send_challenge_ack = false;
-		}
-	}
-	if (send_challenge_ack) {
+	if (tcp_challenge_ack_check(&tp->t_challenge_ack_end,
+	    &tp->t_challenge_ack_cnt)) {
 		tcp_respond(tp, mtod(m, void *), th, m, tp->rcv_nxt,
 		    tp->snd_nxt, TH_ACK);
 		tp->last_ack_sent = tp->rcv_nxt;
@@ -2667,8 +2682,13 @@ SYSCTL_PROC(_net_inet_tcp, TCPCTL_PCBLIST, pcblist,
 #define SND_TAG_STATUS_MAXLEN	128
 
 #ifdef KERN_TLS
+
+static struct sx ktlslist_lock;
+SX_SYSINIT(ktlslistlock, &ktlslist_lock, "ktlslist");
+static uint64_t ktls_glob_gen = 1;
+
 static int
-tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
+tcp_ktlslist_locked(SYSCTL_HANDLER_ARGS, bool export_keys)
 {
 	struct xinpgen xig;
 	struct inpcb *inp;
@@ -2682,6 +2702,7 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 	int error;
 	bool ek, p;
 
+	sx_assert(&ktlslist_lock, SA_XLOCKED);
 	if (req->newptr != NULL)
 		return (EPERM);
 
@@ -2690,7 +2711,7 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 	ipi_gencnt = V_tcbinfo.ipi_gencnt;
 	bzero(&xig, sizeof(xig));
 	xig.xig_len = sizeof(xig);
-	xig.xig_gen = atomic_load_acq_64(&ktls_glob_gen);
+	xig.xig_gen = ktls_glob_gen++;
 	xig.xig_sogen = so_gencnt;
 
 	struct inpcb_iterator inpi = INP_ALL_ITERATOR(&V_tcbinfo,
@@ -2706,7 +2727,8 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 			ek = export_keys && cr_canexport_ktlskeys(
 			    req->td, inp);
 			ksr = so->so_rcv.sb_tls_info;
-			if (ktls_session_genvis(ksr, xig.xig_gen)) {
+			if (ksr != NULL) {
+				ksr->gen = xig.xig_gen;
 				p = true;
 				if (ek) {
 					sz = SIZE_T_MAX;
@@ -2718,13 +2740,20 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 				    ksr->snd_tag->sw->snd_tag_status_str !=
 				    NULL) {
 					sz = SND_TAG_STATUS_MAXLEN;
-					ksr->snd_tag->sw->snd_tag_status_str(
+					in_pcbref(inp);
+					INP_RUNLOCK(inp);
+					error = ksr->snd_tag->sw->
+					    snd_tag_status_str(
 					    ksr->snd_tag, NULL, &sz);
-					len += sz;
+					if (in_pcbrele_rlock(inp))
+						return (EDEADLK);
+					if (error == 0)
+						len += sz;
 				}
 			}
 			kss = so->so_snd.sb_tls_info;
-			if (ktls_session_genvis(kss, xig.xig_gen)) {
+			if (kss != NULL) {
+				kss->gen = xig.xig_gen;
 				p = true;
 				if (ek) {
 					sz = SIZE_T_MAX;
@@ -2736,9 +2765,15 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 				    kss->snd_tag->sw->snd_tag_status_str !=
 				    NULL) {
 					sz = SND_TAG_STATUS_MAXLEN;
-					kss->snd_tag->sw->snd_tag_status_str(
+					in_pcbref(inp);
+					INP_RUNLOCK(inp);
+					error = kss->snd_tag->sw->
+					    snd_tag_status_str(
 					    kss->snd_tag, NULL, &sz);
-					len += sz;
+					if (in_pcbrele_rlock(inp))
+						return (EDEADLK);
+					if (error == 0)
+						len += sz;
 				}
 			}
 			if (p) {
@@ -2781,11 +2816,11 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 		ksr = so->so_rcv.sb_tls_info;
 		kss = so->so_snd.sb_tls_info;
 		xktls = (struct xktls_session *)buf;
-		if (ktls_session_genvis(ksr, xig.xig_gen)) {
+		if (ksr != NULL && ksr->gen == xig.xig_gen) {
 			p = true;
 			ktls_session_to_xktls_onedir(ksr, ek, &xktls->rcv);
 		}
-		if (ktls_session_genvis(kss, xig.xig_gen)) {
+		if (kss != NULL && kss->gen == xig.xig_gen) {
 			p = true;
 			ktls_session_to_xktls_onedir(kss, ek, &xktls->snd);
 		}
@@ -2796,7 +2831,7 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 		xktls->so_pcb = (kvaddr_t)inp;
 		memcpy(&xktls->coninf, &inp->inp_inc, sizeof(xktls->coninf));
 		len = sizeof(*xktls);
-		if (ktls_session_genvis(ksr, xig.xig_gen)) {
+		if (ksr != NULL && ksr->gen == xig.xig_gen) {
 			if (ek) {
 				sz = buflen - len;
 				ktls_session_copy_keys(ksr, buf + len, &sz);
@@ -2808,12 +2843,19 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 			if (ksr->snd_tag != NULL &&
 			    ksr->snd_tag->sw->snd_tag_status_str != NULL) {
 				sz = SND_TAG_STATUS_MAXLEN;
-				ksr->snd_tag->sw->snd_tag_status_str(
+				in_pcbref(inp);
+				INP_RUNLOCK(inp);
+				error = ksr->snd_tag->sw->snd_tag_status_str(
 				    ksr->snd_tag, buf + len, &sz);
-				len += sz;
+				if (in_pcbrele_rlock(inp))
+					return (EDEADLK);
+				if (error == 0) {
+					xktls->rcv.drv_st_len = sz;
+					len += sz;
+				}
 			}
 		}
-		if (ktls_session_genvis(kss, xig.xig_gen)) {
+		if (kss != NULL && kss->gen == xig.xig_gen) {
 			if (ek) {
 				sz = buflen - len;
 				ktls_session_copy_keys(kss, buf + len, &sz);
@@ -2825,9 +2867,16 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 			if (kss->snd_tag != NULL &&
 			    kss->snd_tag->sw->snd_tag_status_str != NULL) {
 				sz = SND_TAG_STATUS_MAXLEN;
-				kss->snd_tag->sw->snd_tag_status_str(
+				in_pcbref(inp);
+				INP_RUNLOCK(inp);
+				error = kss->snd_tag->sw->snd_tag_status_str(
 				    kss->snd_tag, buf + len, &sz);
-				len += sz;
+				if (in_pcbrele_rlock(inp))
+					return (EDEADLK);
+				if (error == 0) {
+					xktls->snd.drv_st_len = sz;
+					len += sz;
+				}
 			}
 		}
 		len = roundup2(len, __alignof(*xktls));
@@ -2843,8 +2892,6 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 	}
 
 	if (error == 0) {
-		atomic_thread_fence_rel();
-		xig.xig_gen = atomic_load_64(&ktls_glob_gen);
 		xig.xig_sogen = so_gencnt;
 		xig.xig_count = cnt;
 		error = SYSCTL_OUT(req, &xig, sizeof(xig));
@@ -2855,15 +2902,37 @@ tcp_ktlslist(SYSCTL_HANDLER_ARGS, bool export_keys)
 }
 
 static int
+tcp_ktlslist1(SYSCTL_HANDLER_ARGS, bool export_keys)
+{
+	int repeats, error;
+
+	for (repeats = 0; repeats < 100; repeats++) {
+		if (sx_xlock_sig(&ktlslist_lock))
+			return (EINTR);
+		error = tcp_ktlslist_locked(oidp, arg1, arg2, req,
+		    export_keys);
+		sx_xunlock(&ktlslist_lock);
+		if (error != EDEADLK)
+			break;
+		if (sig_intr() != 0) {
+			error = EINTR;
+			break;
+		}
+		req->oldidx = 0;
+	}
+	return (error);
+}
+	
+static int
 tcp_ktlslist_nokeys(SYSCTL_HANDLER_ARGS)
 {
-	return (tcp_ktlslist(oidp, arg1, arg2, req, false));
+	return (tcp_ktlslist1(oidp, arg1, arg2, req, false));
 }
 
 static int
 tcp_ktlslist_wkeys(SYSCTL_HANDLER_ARGS)
 {
-	return (tcp_ktlslist(oidp, arg1, arg2, req, true));
+	return (tcp_ktlslist1(oidp, arg1, arg2, req, true));
 }
 
 SYSCTL_PROC(_net_inet_tcp, TCPCTL_KTLSLIST, ktlslist,
@@ -3148,7 +3217,7 @@ tcp6_next_pmtu(const struct icmp6_hdr *icmp6)
 	 * small, set to the min.
 	 */
 	if (mtu < IPV6_MMTU)
-		mtu = IPV6_MMTU - 8;	/* XXXNP: what is the adjustment for? */
+		mtu = IPV6_MMTU;
 	return (mtu);
 }
 
@@ -4488,7 +4557,7 @@ tcp_change_time_units(struct tcpcb *tp, int granularity)
 		panic("Unknown granularity:%d tp:%p",
 		      granularity, tp);
 	}
-#endif	
+#endif
 }
 
 void

@@ -55,6 +55,7 @@
 #include <sys/serial.h>
 #include <sys/signal.h>
 #include <sys/stat.h>
+#include <sys/stdarg.h>
 #include <sys/sx.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
@@ -67,8 +68,6 @@
 #include <sys/vnode.h>
 
 #include <fs/devfs/devfs.h>
-
-#include <machine/stdarg.h>
 
 static MALLOC_DEFINE(M_TTY, "tty", "tty device");
 
@@ -755,12 +754,14 @@ static const struct filterops tty_kqops_read = {
 	.f_isfd = 1,
 	.f_detach = tty_kqops_read_detach,
 	.f_event = tty_kqops_read_event,
+	.f_copy = knote_triv_copy,
 };
 
 static const struct filterops tty_kqops_write = {
 	.f_isfd = 1,
 	.f_detach = tty_kqops_write_detach,
 	.f_event = tty_kqops_write_event,
+	.f_copy = knote_triv_copy,
 };
 
 static int

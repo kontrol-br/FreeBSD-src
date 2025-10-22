@@ -61,6 +61,7 @@ class VnetInterface(object):
             self.iftype = self.IFT_LOOP
         else:
             self.iftype = self.IFT_ETHER
+            self.ether = ToolsHelper.get_output("/sbin/ifconfig %s ether | awk '/ether/ { print $2; }'" % iface_name).rstrip()
 
     @property
     def ifindex(self):
@@ -99,9 +100,13 @@ class VnetInterface(object):
         name = run_cmd("/sbin/ifconfig {} create".format(iface_name)).rstrip()
         if not name:
             raise Exception("Unable to create iface {}".format(iface_name))
-        ret = [cls(alias_name, name)]
+        if1 = cls(alias_name, name)
+        ret = [if1]
         if name.startswith("epair"):
-            ret.append(cls(alias_name, name[:-1] + "b"))
+            run_cmd("/sbin/ifconfig {} -txcsum -txcsum6".format(name))
+            if2 = cls(alias_name, name[:-1] + "b")
+            if1.epairb = if2
+            ret.append(if2);
         return ret
 
     def setup_addr(self, _addr: str):
@@ -278,14 +283,15 @@ class VnetFactory(object):
             time.sleep(0.1)
         return not_matched
 
-    def create_vnet(self, vnet_alias: str, ifaces: List[VnetInterface]):
+    def create_vnet(self, vnet_alias: str, ifaces: List[VnetInterface], opts: List[str]):
         vnet_name = "pytest:{}".format(convert_test_name(self.topology_id))
         if self._vnets:
             # add number to distinguish jails
             vnet_name = "{}_{}".format(vnet_name, len(self._vnets) + 1)
         iface_cmds = " ".join(["vnet.interface={}".format(i.name) for i in ifaces])
-        cmd = "/usr/sbin/jail -i -c name={} persist vnet {}".format(
-            vnet_name, iface_cmds
+        opt_cmds = " ".join(["{}".format(i) for i in opts])
+        cmd = "/usr/sbin/jail -i -c name={} persist vnet {} {}".format(
+            vnet_name, iface_cmds, opt_cmds
         )
         jid = 0
         try:
@@ -416,7 +422,10 @@ class VnetTestTemplate(BaseTest):
                     idx = len(iface_map[iface_alias].vnet_aliases)
                     iface_map[iface_alias].vnet_aliases.append(obj_name)
                     vnet_ifaces.append(iface_map[iface_alias].ifaces[idx])
-                vnet = vnet_factory.create_vnet(obj_name, vnet_ifaces)
+                opts = []
+                if "opts" in obj_data:
+                    opts = obj_data["opts"]
+                vnet = vnet_factory.create_vnet(obj_name, vnet_ifaces, opts)
                 vnet_map[obj_name] = vnet
                 # Allow reference to VNETs as attributes
                 setattr(self, obj_name, vnet)

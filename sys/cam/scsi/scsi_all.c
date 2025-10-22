@@ -112,7 +112,7 @@ static void	fetchtableentries(int sense_key, int asc, int ascq,
 				  const struct asc_table_entry **);
 
 #ifdef _KERNEL
-static void	init_scsi_delay(void);
+static void	init_scsi_delay(void *);
 static int	sysctl_scsi_delay(SYSCTL_HANDLER_ARGS);
 static int	set_scsi_delay(int delay);
 #endif
@@ -686,7 +686,7 @@ scsi_op_desc(uint16_t opcode, struct scsi_inquiry_data *inq_data)
 	opmask = 1 << pd_type;
 
 	for (j = 0; j < num_tables; j++) {
-		for (i = 0;i < num_ops[j] && table[j][i].opcode <= opcode; i++){
+		for (i = 0; i < num_ops[j] && table[j][i].opcode <= opcode; i++) {
 			if ((table[j][i].opcode == opcode)
 			 && ((table[j][i].opmask & opmask) != 0))
 				return(table[j][i].desc);
@@ -3708,11 +3708,7 @@ scsi_command_string(struct cam_device *device, struct ccb_scsiio *csio,
 	/*
 	 * Get the device information.
 	 */
-	xpt_setup_ccb(&cgd->ccb_h,
-		      csio->ccb_h.path,
-		      CAM_PRIORITY_NORMAL);
-	cgd->ccb_h.func_code = XPT_GDEV_TYPE;
-	xpt_action((union ccb *)cgd);
+	xpt_gdev_type(cgd, csio->ccb_h.path);
 
 	/*
 	 * If the device is unconfigured, just pretend that it is a hard
@@ -5144,11 +5140,7 @@ scsi_sense_sbuf(struct cam_device *device, struct ccb_scsiio *csio,
 	/*
 	 * Get the device information.
 	 */
-	xpt_setup_ccb(&cgd->ccb_h,
-		      csio->ccb_h.path,
-		      CAM_PRIORITY_NORMAL);
-	cgd->ccb_h.func_code = XPT_GDEV_TYPE;
-	xpt_action((union ccb *)cgd);
+	xpt_gdev_type(cgd, csio->ccb_h.path);
 
 	/*
 	 * If the device is unconfigured, just pretend that it is a hard
@@ -9387,7 +9379,7 @@ scsi_vpd_supported_page(struct cam_periph *periph, uint8_t page_id)
 }
 
 static void
-init_scsi_delay(void)
+init_scsi_delay(void *dummy __unused)
 {
 	int delay;
 

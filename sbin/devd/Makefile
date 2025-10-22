@@ -32,6 +32,11 @@ CONSOLEDIR=		${DEVDDIR}
 CONSOLE+=		moused.conf syscons.conf
 CONSOLEPACKAGE=		console-tools
 
+CONFGROUPS+=		SND
+SNDDIR=			${DEVDDIR}
+SND=			snd.conf
+SNDPACKAGE=		sound
+
 .if ${MK_BLUETOOTH} != "no"
 CONFGROUPS+=		BLUETOOTH
 BLUETOOTHDIR=		${DEVDDIR}
@@ -45,6 +50,11 @@ HYPERVDIR=${DEVDDIR}
 HYPERV+=	hyperv.conf
 HYPERVPACKAGE=	hyperv-tools
 .endif
+
+CONFGROUPS+=		NVME
+NVMEDIR=		${DEVDDIR}
+NVME+=			nvmf.conf
+NVMEPACKAGE=		nvme-tools
 
 .if ${MK_USB} != "no"
 DEVD+=	uath.conf ulpt.conf

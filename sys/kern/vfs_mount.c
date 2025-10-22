@@ -56,6 +56,7 @@
 #include <sys/filedesc.h>
 #include <sys/reboot.h>
 #include <sys/sbuf.h>
+#include <sys/stdarg.h>
 #include <sys/syscallsubr.h>
 #include <sys/sysproto.h>
 #include <sys/sx.h>
@@ -66,8 +67,6 @@
 #include <vm/uma.h>
 
 #include <geom/geom.h>
-
-#include <machine/stdarg.h>
 
 #include <security/audit/audit.h>
 #include <security/mac/mac_framework.h>
@@ -157,6 +156,7 @@ mount_init(void *mem, int size, int flags)
 	mtx_init(&mp->mnt_mtx, "struct mount mtx", NULL, MTX_DEF);
 	mtx_init(&mp->mnt_listmtx, "struct mount vlist mtx", NULL, MTX_DEF);
 	lockinit(&mp->mnt_explock, PVFS, "explock", 0, 0);
+	lockinit(&mp->mnt_renamelock, PVFS, "rename", 0, 0);
 	mp->mnt_pcpu = uma_zalloc_pcpu(pcpu_zone_16, M_WAITOK | M_ZERO);
 	mp->mnt_ref = 0;
 	mp->mnt_vfs_ops = 1;
@@ -171,6 +171,7 @@ mount_fini(void *mem, int size)
 
 	mp = (struct mount *)mem;
 	uma_zfree_pcpu(pcpu_zone_16, mp->mnt_pcpu);
+	lockdestroy(&mp->mnt_renamelock);
 	lockdestroy(&mp->mnt_explock);
 	mtx_destroy(&mp->mnt_listmtx);
 	mtx_destroy(&mp->mnt_mtx);
@@ -682,7 +683,6 @@ vfs_mount_alloc(struct vnode *vp, struct vfsconf *vfsp, const char *fspath,
 	MPASSERT(mp->mnt_vfs_ops == 1, mp,
 	    ("vfs_ops should be 1 but %d found", mp->mnt_vfs_ops));
 	(void) vfs_busy(mp, MBF_NOWAIT);
-	atomic_add_acq_int(&vfsp->vfc_refcount, 1);
 	mp->mnt_op = vfsp->vfc_vfsops;
 	mp->mnt_vfc = vfsp;
 	mp->mnt_stat.f_type = vfsp->vfc_typenum;
@@ -730,7 +730,6 @@ vfs_mount_destroy(struct mount *mp)
 	    __FILE__, __LINE__));
 	MPPASS(mp->mnt_writeopcount == 0, mp);
 	MPPASS(mp->mnt_secondary_writes == 0, mp);
-	atomic_subtract_rel_int(&mp->mnt_vfc->vfc_refcount, 1);
 	if (!TAILQ_EMPTY(&mp->mnt_nvnodelist)) {
 		struct vnode *vp;
 
@@ -768,6 +767,9 @@ vfs_mount_destroy(struct mount *mp)
 		vfs_free_addrlist(mp->mnt_export);
 		free(mp->mnt_export, M_MOUNT);
 	}
+	vfsconf_lock();
+	mp->mnt_vfc->vfc_refcount--;
+	vfsconf_unlock();
 	crfree(mp->mnt_cred);
 	uma_zfree(mount_zone, mp);
 }
@@ -1132,6 +1134,7 @@ vfs_domount_first(
 	if (jailed(td->td_ucred) && (!prison_allow(td->td_ucred,
 	    vfsp->vfc_prison_flag) || vp == td->td_ucred->cr_prison->pr_root)) {
 		vput(vp);
+		vfs_unref_vfsconf(vfsp);
 		return (EPERM);
 	}
 
@@ -1168,6 +1171,7 @@ vfs_domount_first(
 	}
 	if (error != 0) {
 		vput(vp);
+		vfs_unref_vfsconf(vfsp);
 		return (error);
 	}
 	vn_seqc_write_begin(vp);

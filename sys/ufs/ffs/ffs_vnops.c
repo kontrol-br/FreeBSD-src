@@ -508,9 +508,7 @@ ffs_lock(
 	case LK_EXCLUSIVE:
 		flags = ap->a_flags;
 		for (;;) {
-#ifdef DEBUG_VFS_LOCKS
 			VNPASS(vp->v_holdcnt != 0, vp);
-#endif	/* DEBUG_VFS_LOCKS */
 			lkp = vp->v_vnlock;
 			result = lockmgr_lock_flags(lkp, flags,
 			    &VI_MTX(vp)->lock_object, ap->a_file, ap->a_line);
@@ -1399,8 +1397,7 @@ ffs_lock_ea(struct vnode *vp)
 	VI_LOCK(vp);
 	while (ip->i_flag & IN_EA_LOCKED) {
 		UFS_INODE_SET_FLAG(ip, IN_EA_LOCKWAIT);
-		msleep(&ip->i_ea_refs, &vp->v_interlock, PINOD + 2, "ufs_ea",
-		    0);
+		msleep(&ip->i_ea_refs, &vp->v_interlock, PINOD, "ufs_ea", 0);
 	}
 	UFS_INODE_SET_FLAG(ip, IN_EA_LOCKED);
 	VI_UNLOCK(vp);
@@ -1553,7 +1550,7 @@ ffs_openextattr(
 	} */ *ap)
 {
 
-	if (ap->a_vp->v_type == VCHR || ap->a_vp->v_type == VBLK)
+	if (VN_ISDEV(ap->a_vp))
 		return (EOPNOTSUPP);
 
 	return (ffs_open_ea(ap->a_vp, ap->a_cred, ap->a_td));
@@ -1575,7 +1572,7 @@ ffs_closeextattr(
 	struct vnode *vp;
 
 	vp = ap->a_vp;
-	if (vp->v_type == VCHR || vp->v_type == VBLK)
+	if (VN_ISDEV(vp))
 		return (EOPNOTSUPP);
 	if (ap->a_commit && (vp->v_mount->mnt_flag & MNT_RDONLY) != 0)
 		return (EROFS);
@@ -1613,7 +1610,7 @@ ffs_deleteextattr(
 	vp = ap->a_vp;
 	ip = VTOI(vp);
 
-	if (vp->v_type == VCHR || vp->v_type == VBLK)
+	if (VN_ISDEV(vp))
 		return (EOPNOTSUPP);
 	if (strlen(ap->a_name) == 0)
 		return (EINVAL);
@@ -1691,7 +1688,7 @@ ffs_getextattr(
 
 	ip = VTOI(ap->a_vp);
 
-	if (ap->a_vp->v_type == VCHR || ap->a_vp->v_type == VBLK)
+	if (VN_ISDEV(ap->a_vp))
 		return (EOPNOTSUPP);
 
 	error = extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
@@ -1741,7 +1738,7 @@ ffs_listextattr(
 
 	ip = VTOI(ap->a_vp);
 
-	if (ap->a_vp->v_type == VCHR || ap->a_vp->v_type == VBLK)
+	if (VN_ISDEV(ap->a_vp))
 		return (EOPNOTSUPP);
 
 	error = extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
@@ -1806,7 +1803,7 @@ ffs_setextattr(
 	ip = VTOI(vp);
 	fs = ITOFS(ip);
 
-	if (vp->v_type == VCHR || vp->v_type == VBLK)
+	if (VN_ISDEV(vp))
 		return (EOPNOTSUPP);
 	if (strlen(ap->a_name) == 0)
 		return (EINVAL);

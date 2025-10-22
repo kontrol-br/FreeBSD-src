@@ -116,7 +116,8 @@ DIR	*fdopendir(int);
 struct dirent *
 	 readdir(DIR *);
 #if __POSIX_VISIBLE >= 199506 || __XSI_VISIBLE >= 500
-int	 readdir_r(DIR *, struct dirent *, struct dirent **);
+int	 readdir_r(DIR *, struct dirent *, struct dirent **)
+	__deprecated1("Does not take variable {NAME_MAX} into account");
 #endif
 void	 rewinddir(DIR *);
 #if __POSIX_VISIBLE >= 200809 || __XSI_VISIBLE >= 700
@@ -130,9 +131,22 @@ int	 scandir_b(const char *, struct dirent ***,
 #endif
 #endif
 #if __BSD_VISIBLE
+int	 fdscandir(int, struct dirent ***,
+	    int (*)(const struct dirent *), int (*)(const struct dirent **,
+	    const struct dirent **));
+#ifdef __BLOCKS__
+int	 fdscandir_b(int, struct dirent ***,
+	    int (^)(const struct dirent *),
+	    int (^)(const struct dirent **, const struct dirent **));
+#endif
 int	 scandirat(int, const char *, struct dirent ***,
 	    int (*)(const struct dirent *), int (*)(const struct dirent **,
 	    const struct dirent **));
+#ifdef __BLOCKS__
+int	 scandirat_b(int, const char *, struct dirent ***,
+	    int (^)(const struct dirent *),
+	    int (^)(const struct dirent **, const struct dirent **));
+#endif
 #endif
 #if __XSI_VISIBLE
 void	 seekdir(DIR *, long);

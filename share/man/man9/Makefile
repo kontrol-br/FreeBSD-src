@@ -1,5 +1,7 @@
 .include <src.opts.mk>
 
+PACKAGE=	kernel-man
+
 MAN=	accept_filter.9 \
 	accf_data.9 \
 	accf_dns.9 \
@@ -67,6 +69,7 @@ MAN=	accept_filter.9 \
 	config_intrhook.9 \
 	contigmalloc.9 \
 	copy.9 \
+	coredumper_register.9 \
 	counter.9 \
 	cpu_machdep.9 \
 	cpuset.9 \
@@ -393,7 +396,6 @@ MAN=	accept_filter.9 \
 	vm_map_max.9 \
 	vm_map_protect.9 \
 	vm_map_remove.9 \
-	vm_map_simplify_entry.9 \
 	vm_map_stack.9 \
 	vm_map_submap.9 \
 	vm_map_sync.9 \
@@ -415,7 +417,7 @@ MAN=	accept_filter.9 \
 	vn_deallocate.9 \
 	vn_fullpath.9 \
 	vn_isdisk.9 \
-	vnet.9 \
+	VNET.9 \
 	vnode.9 \
 	vnode_pager_setsize.9 \
 	vnode_pager_purge_range.9 \
@@ -435,6 +437,7 @@ MAN=	accept_filter.9 \
 	VOP_GETEXTATTR.9 \
 	VOP_GETPAGES.9 \
 	VOP_INACTIVE.9 \
+	VOP_INOTIFY.9 \
 	VOP_IOCTL.9 \
 	VOP_LINK.9 \
 	VOP_LISTEXTATTR.9 \
@@ -903,6 +906,7 @@ MLINKS+=copy.9 copyin.9 \
 	copy.9 copyout.9 \
 	copy.9 copyout_nofault.9 \
 	copy.9 copystr.9
+MLINKS+=coredumper_register.9 coredumper_unregister.9
 MLINKS+=counter.9 counter_u64_alloc.9 \
 	counter.9 counter_u64_free.9 \
 	counter.9 counter_u64_add.9 \
@@ -2451,6 +2455,9 @@ MLINKS+=vm_page_insert.9 vm_page_remove.9
 MLINKS+=vm_page_wire.9 vm_page_unwire.9 \
 	vm_page_wire.9 vm_page_unwire_noq.9 \
 	vm_page_wire.9 vm_page_wire_mapped.9
+MLINKS+=vn_fullpath.9 vn_fullpath_jail.9 \
+	vn_fullpath.9 vn_fullpath_global.9 \
+	vn_fullpath.9 vn_fullpath_hardlink.9
 MLINKS+=VOP_ACCESS.9 VOP_ACCESSX.9
 MLINKS+=VOP_ATTRIB.9 VOP_GETATTR.9 \
 	VOP_ATTRIB.9 VOP_SETATTR.9 \
@@ -2461,6 +2468,7 @@ MLINKS+=VOP_CREATE.9 VOP_MKDIR.9 \
 MLINKS+=VOP_FSYNC.9 VOP_FDATASYNC.9
 MLINKS+=VOP_GETPAGES.9 VOP_PUTPAGES.9
 MLINKS+=VOP_INACTIVE.9 VOP_RECLAIM.9
+MLINKS+=VOP_INOTIFY.9 VOP_INOTIFY_ADD_WATCH.9
 MLINKS+=VOP_LOCK.9 vn_lock.9 \
 	VOP_LOCK.9 VOP_ISLOCKED.9 \
 	VOP_LOCK.9 VOP_UNLOCK.9
@@ -2469,9 +2477,8 @@ MLINKS+=VOP_OPENCLOSE.9 VOP_CLOSE.9 \
 MLINKS+=VOP_RDWR.9 VOP_READ.9 \
 	VOP_RDWR.9 VOP_WRITE.9
 MLINKS+=VOP_REMOVE.9 VOP_RMDIR.9
-MLINKS+=vnet.9 vimage.9
-MLINKS+=vref.9 VREF.9 \
-	vref.9 vrefl.9
+MLINKS+=VNET.9 VIMAGE.9
+MLINKS+=vref.9 vrefl.9
 MLINKS+=vrele.9 vput.9 \
 	vrele.9 vunref.9
 MLINKS+=vslock.9 vsunlock.9

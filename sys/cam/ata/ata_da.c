@@ -44,6 +44,7 @@
 #include <sys/malloc.h>
 #include <sys/endian.h>
 #include <sys/cons.h>
+#include <sys/power.h>
 #include <sys/proc.h>
 #include <sys/reboot.h>
 #include <sys/sbuf.h>
@@ -878,8 +879,8 @@ static  int		adaerror(union ccb *ccb, uint32_t cam_flags,
 				uint32_t sense_flags);
 static callout_func_t	adasendorderedtag;
 static void		adashutdown(void *arg, int howto);
-static void		adasuspend(void *arg);
-static void		adaresume(void *arg);
+static void		adasuspend(void *arg, enum power_stype stype);
+static void		adaresume(void *arg, enum power_stype stype);
 
 #ifndef ADA_DEFAULT_TIMEOUT
 #define ADA_DEFAULT_TIMEOUT 30	/* Timeout in seconds */
@@ -1359,10 +1360,7 @@ adaasync(void *callback_arg, uint32_t code,
 	case AC_GETDEV_CHANGED:
 	{
 		softc = (struct ada_softc *)periph->softc;
-		memset(&cgd, 0, sizeof(cgd));
-		xpt_setup_ccb(&cgd.ccb_h, periph->path, CAM_PRIORITY_NORMAL);
-		cgd.ccb_h.func_code = XPT_GDEV_TYPE;
-		xpt_action((union ccb *)&cgd);
+		xpt_gdev_type(&cgd, periph->path);
 
 		/*
 		 * Update our information based on the new Identify data.
@@ -3750,7 +3748,7 @@ adashutdown(void *arg, int howto)
 }
 
 static void
-adasuspend(void *arg)
+adasuspend(void *arg, enum power_stype stype)
 {
 
 	adaflush();
@@ -3763,7 +3761,7 @@ adasuspend(void *arg)
 }
 
 static void
-adaresume(void *arg)
+adaresume(void *arg, enum power_stype stype)
 {
 	struct cam_periph *periph;
 	struct ada_softc *softc;

@@ -22,8 +22,12 @@ REVISION?=	${_REVISION}
 
 .if ${BRANCH} == CURRENT || ${BRANCH} == STABLE
 SUBURL=		base_latest
-.else
+.elif ${BRANCH} == RELEASE || ${BRANCH:C/[0-9]+$//} == BETA || \
+    ${BRANCH:C/[0-9]+$//} == RC
 SUBURL=		base_release_${REVISION:C/[0-9]+\.//}
+.else
+.warning Invalid branch "${BRANCH}"
+SUBURL=		base_latest
 .endif
 
 FreeBSD-base.conf: FreeBSD-base.conf.in

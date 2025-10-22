@@ -10,7 +10,7 @@ KYUA_VERSION=	0.13
 KYUA_SRCDIR=	${SRCTOP}/contrib/kyua
 .PATH: ${KYUA_SRCDIR}
 
-PACKAGE=	tests
+PACKAGE=	kyua
 PROG_CXX=	kyua
 SRCS=		main.cpp
 LIBADD=		lutok sqlite3 util
@@ -32,7 +32,7 @@ MAN=		kyua-about.1 \
 
 CFLAGS+=	-I${KYUA_SRCDIR} -I${.CURDIR}
 CFLAGS+=	-I${SRCTOP}/contrib/lutok/include
-CFLAGS+=	-I${SRCTOP}/contrib/sqlite3
+CFLAGS+=	-I${SYSROOT:U${DESTDIR}}/${INCLUDEDIR}/private/sqlite3
 CFLAGS+=	-DHAVE_CONFIG_H
 
 # We compile the kyua libraries as part of the main executable as this saves
@@ -129,7 +129,8 @@ SRCS+=	engine/atf.cpp			\
 	engine/execenv/execenv_host.cpp
 
 SRCS+=	os/freebsd/execenv_jail_manager.cpp	\
-	os/freebsd/main.cpp
+	os/freebsd/main.cpp			\
+	os/freebsd/reqs_checker_kmods.cpp
 
 SRCS+=	store/dbtypes.cpp		\
 	store/exceptions.cpp		\

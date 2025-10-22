@@ -80,6 +80,8 @@
     ..
     cddl
         lib
+            libtpool
+            ..
         ..
         sbin
         ..
@@ -316,6 +318,8 @@
             ..
             dynamicpie
             ..
+            errno
+            ..
             static
             ..
         ..
@@ -509,11 +513,15 @@
         ..
         savecore
         ..
+        swapon
+        ..
         sysctl
         ..
     ..
     secure
         lib
+            libcrypto
+            ..
         ..
         libexec
         ..
@@ -826,6 +834,8 @@
                 gate
                 ..
                 gpt
+                ..
+                label
                 ..
                 mirror
                 ..
@@ -1199,6 +1209,8 @@
         ..
         seq
         ..
+        sockstat
+        ..
         soelim
         ..
         sort
@@ -1247,6 +1259,8 @@
         ..
     ..
     usr.sbin
+        certctl
+        ..
         chown
         ..
         ctladm
@@ -1272,6 +1286,8 @@
         praudit
         ..
         pw
+        ..
+        quot
         ..
         rpcbind
         ..

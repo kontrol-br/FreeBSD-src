@@ -28,13 +28,13 @@
 
 #include <sys/cdefs.h>
 #ifdef _KERNEL
-#include <machine/stdarg.h>
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/systm.h>
 #include <sys/lock.h>
 #include <sys/module.h>
 #include <sys/rwlock.h>
+#include <sys/stdarg.h>
 #include <sys/syslog.h>
 #else
 #include <stdarg.h>
@@ -2181,7 +2181,7 @@ LibAliasInit(struct libalias *la)
 #undef malloc	/* XXX: ugly */
 		la = malloc(sizeof *la, M_ALIAS, M_WAITOK | M_ZERO);
 #else
-		la = calloc(sizeof *la, 1);
+		la = calloc(1, sizeof *la);
 		if (la == NULL)
 			return (la);
 #endif

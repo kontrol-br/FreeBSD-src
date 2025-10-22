@@ -54,7 +54,6 @@
 #include <sys/osd.h>
 #include <sys/priority.h>
 #include <sys/rtprio.h>			/* XXX. */
-#include <sys/runq.h>
 #include <sys/resource.h>
 #include <sys/sigio.h>
 #include <sys/signal.h>
@@ -742,7 +741,7 @@ struct proc {
 					       reaper which spawned
 					       our subtree. */
 	uint64_t	p_elf_flags;	/* (x) ELF flags */
-	void		*p_elf_brandinfo; /* (x) Elf_Brandinfo, NULL for
+	const void	*p_elf_brandinfo; /* (x) Elf_Brandinfo, NULL for
 						 non ELF binaries. */
 	sbintime_t	p_umtx_min_timeout;
 /* End area that is copied on creation. */
@@ -764,7 +763,6 @@ struct proc {
 	LIST_HEAD(, mqueue_notifier)	p_mqnotifier; /* (c) mqueue notifiers.*/
 	struct kdtrace_proc	*p_dtrace; /* (*) DTrace-specific data. */
 	struct cv	p_pwait;	/* (*) wait cv for exit/exec. */
-	uint64_t	p_prev_runtime;	/* (c) Resource usage accounting. */
 	struct racct	*p_racct;	/* (b) Resource accounting. */
 	int		p_throttled;	/* (c) Flag for racct pcpu throttling */
 	/*
@@ -893,6 +891,8 @@ struct proc {
 
 #define	P2_LOGSIGEXIT_ENABLE	0x00800000	/* Disable logging on sigexit */
 #define	P2_LOGSIGEXIT_CTL	0x01000000	/* Override kern.logsigexit */
+
+#define	P2_HWT			0x02000000	/* Process is using HWT. */
 
 /* Flags protected by proctree_lock, kept in p_treeflags. */
 #define	P_TREE_ORPHANED		0x00000001	/* Reparented, on orphan list */

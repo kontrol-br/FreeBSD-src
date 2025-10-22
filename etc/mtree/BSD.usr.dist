@@ -26,9 +26,13 @@
                     ..
                 ..
             ..
+            samplerate
+            ..
             sqlite3
             ..
             ucl
+            ..
+            yaml
             ..
             zstd
             ..
@@ -81,12 +85,26 @@
         ..
         i18n
         ..
+        krb5                    tags=package=kerberos-kdc
+            kdb                 tags=package=kerberos-kdc
+            ..
+            plugins             tags=package=kerberos-kdc
+                kdb             tags=package=kerberos-kdc
+                ..
+                preauth         tags=package=kerberos-kdc
+                ..
+                tls             tags=package=kerberos-kdc
+                ..
+            ..
+        ..
         libxo
             encoder
             ..
         ..
         ossl-modules
         ..
+	virtual_oss
+	..
     ..
     libdata
         ldscripts
@@ -162,8 +180,6 @@
         fwget
         ..
         hyperv
-        ..
-        kgdb
         ..
         lpr
             ru
@@ -253,6 +269,8 @@
         ..
         dtrace
         ..
+        et        tags=package=kerberos-dev
+        ..
         examples
             BSD_daemon
             ..
@@ -270,8 +288,6 @@
             ..
             dma
             ..
-            drivers
-            ..
             dwatch
             ..
             etc
@@ -287,6 +303,8 @@
             hostapd
             ..
             indent
+            ..
+            inotify
             ..
             ipfilter
             ..

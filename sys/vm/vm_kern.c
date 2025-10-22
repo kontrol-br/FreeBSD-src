@@ -110,11 +110,18 @@ u_int exec_map_entry_size;
 u_int exec_map_entries;
 
 SYSCTL_ULONG(_vm, OID_AUTO, min_kernel_address, CTLFLAG_RD,
-    SYSCTL_NULL_ULONG_PTR, VM_MIN_KERNEL_ADDRESS, "Min kernel address");
+#if defined(__amd64__)
+    &kva_layout.km_low, 0,
+#else
+    SYSCTL_NULL_ULONG_PTR, VM_MIN_KERNEL_ADDRESS,
+#endif
+    "Min kernel address");
 
 SYSCTL_ULONG(_vm, OID_AUTO, max_kernel_address, CTLFLAG_RD,
 #if defined(__arm__)
     &vm_max_kernel_address, 0,
+#elif defined(__amd64__)
+    &kva_layout.km_high, 0,
 #else
     SYSCTL_NULL_ULONG_PTR, VM_MAX_KERNEL_ADDRESS,
 #endif
@@ -316,7 +323,9 @@ kmem_alloc_attr_domainset(struct domainset *ds, vm_size_t size, int flags,
 
 	start_segind = -1;
 
-	vm_domainset_iter_policy_init(&di, ds, &domain, &flags);
+	if (vm_domainset_iter_policy_init(&di, ds, &domain, &flags) != 0)
+		return (NULL);
+
 	do {
 		addr = kmem_alloc_attr_domain(domain, size, flags, low, high,
 		    memattr);
@@ -410,7 +419,9 @@ kmem_alloc_contig_domainset(struct domainset *ds, vm_size_t size, int flags,
 
 	start_segind = -1;
 
-	vm_domainset_iter_policy_init(&di, ds, &domain, &flags);
+	if (vm_domainset_iter_policy_init(&di, ds, &domain, &flags))
+		return (NULL);
+
 	do {
 		addr = kmem_alloc_contig_domain(domain, size, flags, low, high,
 		    alignment, boundary, memattr);
@@ -510,7 +521,9 @@ kmem_malloc_domainset(struct domainset *ds, vm_size_t size, int flags)
 	void *addr;
 	int domain;
 
-	vm_domainset_iter_policy_init(&di, ds, &domain, &flags);
+	if (vm_domainset_iter_policy_init(&di, ds, &domain, &flags) != 0)
+		return (NULL);
+
 	do {
 		addr = kmem_malloc_domain(domain, size, flags);
 		if (addr != NULL)

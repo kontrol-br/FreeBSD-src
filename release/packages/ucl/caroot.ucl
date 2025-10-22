@@ -1,0 +1,9 @@
+deps {
+	"certctl": {
+		version = "${VERSION}"
+	}
+}
+scripts: {
+	post-install = "/usr/sbin/certctl -D${PKG_ROOTDIR}/ rehash"
+	post-uninstall = "/usr/sbin/certctl -D${PKG_ROOTDIR}/ rehash"
+}

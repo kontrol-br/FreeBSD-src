@@ -106,9 +106,11 @@ struct in6_ifextra {
 	struct scope6_id *scope6_id;
 	struct lltable *lltable;
 	struct mld_ifsoftc *mld_ifinfo;
+	u_int dad_failures;	/* DAD failures when using RFC 7217 stable addresses */
 };
 
 #define	LLTABLE6(ifp)	(((struct in6_ifextra *)(ifp)->if_afdata[AF_INET6])->lltable)
+#define	DAD_FAILURES(ifp)	(((struct in6_ifextra *)(ifp)->if_afdata[AF_INET6])->dad_failures)
 
 #ifdef _KERNEL
 
@@ -323,8 +325,7 @@ struct in6_prflags {
 	struct prf_ra {
 		u_char onlink : 1;
 		u_char autonomous : 1;
-		u_char ra_derived: 1;
-		u_char reserved : 5;
+		u_char reserved : 6;
 	} prf_ra;
 	u_char prf_reserved1;
 	u_short prf_reserved2;
@@ -355,7 +356,6 @@ struct  in6_prefixreq {
 
 #define ipr_raf_onlink		ipr_flags.prf_ra.onlink
 #define ipr_raf_auto		ipr_flags.prf_ra.autonomous
-#define ipr_raf_ra_derived	ipr_flags.prf_ra.ra_derived
 
 #define ipr_statef_onlink	ipr_flags.prf_state.onlink
 

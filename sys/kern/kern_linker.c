@@ -30,6 +30,7 @@
 #include "opt_ddb.h"
 #include "opt_kld.h"
 #include "opt_hwpmc_hooks.h"
+#include "opt_hwt_hooks.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -64,7 +65,7 @@
 
 #include "linker_if.h"
 
-#ifdef HWPMC_HOOKS
+#if defined(HWPMC_HOOKS) || defined(HWT_HOOKS)
 #include <sys/pmckern.h>
 #endif
 
@@ -434,7 +435,7 @@ linker_file_register_modules(linker_file_t lf)
 }
 
 static void
-linker_init_kernel_modules(void)
+linker_init_kernel_modules(void *dummy __unused)
 {
 
 	sx_xlock(&kld_sx);
@@ -2184,7 +2185,7 @@ linker_basename(const char *path)
 	return (filename);
 }
 
-#ifdef HWPMC_HOOKS
+#if defined(HWPMC_HOOKS) || defined(HWT_HOOKS)
 /*
  * Inform hwpmc about the set of kernel modules currently loaded.
  */

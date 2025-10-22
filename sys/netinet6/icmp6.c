@@ -159,6 +159,7 @@ static int ni6_addrs(struct icmp6_nodeinfo *, struct mbuf *,
 static int ni6_store_addrs(struct icmp6_nodeinfo *, struct icmp6_nodeinfo *,
 				struct ifnet *, int);
 static int icmp6_notify_error(struct mbuf **, int, int);
+static void icmp6_mtudisc_update(struct ip6ctlparam *ip6cp);
 
 /*
  * Kernel module interface for updating icmp6stat.  The argument is an index
@@ -1115,7 +1116,7 @@ icmp6_notify_error(struct mbuf **mp, int off, int icmp6len)
 		if (icmp6type == ICMP6_PACKET_TOO_BIG) {
 			notifymtu = ntohl(icmp6->icmp6_mtu);
 			ip6cp.ip6c_cmdarg = (void *)&notifymtu;
-			icmp6_mtudisc_update(&ip6cp, 1);	/*XXX*/
+			icmp6_mtudisc_update(&ip6cp);
 		}
 
 		if (ip6_ctlprotox[nxt] != NULL)
@@ -1130,47 +1131,18 @@ icmp6_notify_error(struct mbuf **mp, int off, int icmp6len)
 	return (-1);
 }
 
-void
-icmp6_mtudisc_update(struct ip6ctlparam *ip6cp, int validated)
+static void
+icmp6_mtudisc_update(struct ip6ctlparam *ip6cp)
 {
 	struct in6_addr *dst = &ip6cp->ip6c_finaldst->sin6_addr;
 	struct icmp6_hdr *icmp6 = ip6cp->ip6c_icmp6;
-	struct mbuf *m = ip6cp->ip6c_m;	/* will be necessary for scope issue */
+	struct mbuf *m = ip6cp->ip6c_m;
 	u_int mtu = ntohl(icmp6->icmp6_mtu);
 	struct in_conninfo inc;
 	uint32_t max_mtu;
 
-#if 0
-	/*
-	 * RFC2460 section 5, last paragraph.
-	 * even though minimum link MTU for IPv6 is IPV6_MMTU,
-	 * we may see ICMPv6 too big with mtu < IPV6_MMTU
-	 * due to packet translator in the middle.
-	 * see ip6_output() and ip6_getpmtu() "alwaysfrag" case for
-	 * special handling.
-	 */
 	if (mtu < IPV6_MMTU)
 		return;
-#endif
-
-	/*
-	 * we reject ICMPv6 too big with abnormally small value.
-	 * XXX what is the good definition of "abnormally small"?
-	 */
-	if (mtu < sizeof(struct ip6_hdr) + sizeof(struct ip6_frag) + 8)
-		return;
-
-	if (!validated)
-		return;
-
-	/*
-	 * In case the suggested mtu is less than IPV6_MMTU, we
-	 * only need to remember that it was for above mentioned
-	 * "alwaysfrag" case.
-	 * Try to be as close to the spec as possible.
-	 */
-	if (mtu < IPV6_MMTU)
-		mtu = IPV6_MMTU - 8;
 
 	bzero(&inc, sizeof(inc));
 	inc.inc_fibnum = M_GETFIB(m);
@@ -2844,7 +2816,7 @@ sysctl_icmp6lim_and_jitter(SYSCTL_HANDLER_ARGS)
 }
 
 
-VNET_DEFINE_STATIC(struct counter_rate, icmp6_rates[RATELIM_MAX]);
+VNET_DEFINE_STATIC(struct counter_rate *, icmp6_rates[RATELIM_MAX]);
 #define	V_icmp6_rates	VNET(icmp6_rates)
 
 static void
@@ -2852,8 +2824,7 @@ icmp6_ratelimit_init(void)
 {
 
 	for (int i = 0; i < RATELIM_MAX; i++) {
-		V_icmp6_rates[i].cr_rate = counter_u64_alloc(M_WAITOK);
-		V_icmp6_rates[i].cr_ticks = ticks;
+		V_icmp6_rates[i] = counter_rate_alloc(M_WAITOK, 1);
 		icmp6lim_new_jitter(i);
 	}
 }
@@ -2866,7 +2837,7 @@ icmp6_ratelimit_uninit(void)
 {
 
 	for (int i = 0; i < RATELIM_MAX; i++)
-		counter_u64_free(V_icmp6_rates[i].cr_rate);
+		counter_rate_free(V_icmp6_rates[i]);
 }
 VNET_SYSUNINIT(icmp6_ratelimit, SI_SUB_PROTO_DOMAIN, SI_ORDER_THIRD,
     icmp6_ratelimit_uninit, NULL);
@@ -2916,7 +2887,7 @@ icmp6_ratelimit(const struct in6_addr *dst, const int type, const int code)
 		break;
 	};
 
-	pps = counter_ratecheck(&V_icmp6_rates[which], V_icmp6errppslim +
+	pps = counter_ratecheck(V_icmp6_rates[which], V_icmp6errppslim +
 	    V_icmp6lim_curr_jitter[which]);
 	if (pps > 0) {
 		if (V_icmp6lim_output)

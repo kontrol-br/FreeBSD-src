@@ -466,7 +466,7 @@ smbfs_read(struct vop_read_args *ap)
 	SMBVDEBUG("\n");
 	if (vp->v_type != VREG && vp->v_type != VDIR)
 		return EPERM;
-	return smbfs_readvnode(vp, uio, ap->a_cred);
+	return smbfs_readvnode(vp, uio, ap->a_cred, NULL);
 }
 
 static int
@@ -748,7 +748,6 @@ smbfs_readdir(struct vop_readdir_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	struct uio *uio = ap->a_uio;
-	int error;
 
 	if (vp->v_type != VDIR)
 		return (EPERM);
@@ -758,8 +757,7 @@ smbfs_readdir(struct vop_readdir_args *ap)
 		return (EOPNOTSUPP);
 	}
 #endif
-	error = smbfs_readvnode(vp, uio, ap->a_cred);
-	return error;
+	return (smbfs_readvnode(vp, uio, ap->a_cred, ap->a_eofflag));
 }
 
 /* ARGSUSED */
@@ -808,6 +806,9 @@ smbfs_pathconf(struct vop_pathconf_args *ap)
 		*retval = 800;	/* XXX: a correct one ? */
 		break;
 	    case _PC_NO_TRUNC:
+		*retval = 1;
+		break;
+	    case _PC_HAS_HIDDENSYSTEM:
 		*retval = 1;
 		break;
 	    default:
@@ -1120,13 +1121,13 @@ smbfs_lookup(struct vop_lookup_args *ap)
 			vput(vp);
 		else
 			vrele(vp);
-		*vpp = NULLVP;
+		*vpp = NULL;
 	}
 	/* 
 	 * entry is not in the cache or has been expired
 	 */
 	error = 0;
-	*vpp = NULLVP;
+	*vpp = NULL;
 	scred = smbfs_malloc_scred();
 	smb_makescred(scred, td, cnp->cn_cred);
 	fap = &fattr;
@@ -1173,7 +1174,7 @@ smbfs_lookup(struct vop_lookup_args *ap)
 		if (error)
 			goto out;
 		if (isdot) {
-			VREF(dvp);
+			vref(dvp);
 			*vpp = dvp;
 			goto out;
 		}

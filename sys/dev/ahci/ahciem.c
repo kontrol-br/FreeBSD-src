@@ -36,7 +36,7 @@
 #include <sys/malloc.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
-#include <machine/stdarg.h>
+#include <sys/stdarg.h>
 #include <machine/resource.h>
 #include <machine/bus.h>
 #include <sys/rman.h>
@@ -479,7 +479,7 @@ ahci_em_emulate_ses_on_led(device_t dev, union ccb *ccb)
 			else
 				ads->common.bytes[0] |= SES_OBJSTAT_NOTINSTALLED;
 			if (ch->disablephy)
-				ads->common.bytes[3] |= SESCTL_DEVOFF;
+				ads->bytes[2] |= SESCTL_DEVOFF;
 			ahci_putch(ch);
 		}
 		ccb->ccb_h.status = CAM_REQ_CMP;

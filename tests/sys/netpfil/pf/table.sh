@@ -582,6 +582,171 @@ anchor_cleanup()
 	pft_cleanup
 }
 
+atf_test_case "flush" "cleanup"
+flush_head()
+{
+	atf_set descr 'Test flushing addresses from tables'
+	atf_set require.user root
+}
+
+flush_body()
+{
+	pft_init
+
+	vnet_mkjail alcatraz
+
+	atf_check -s exit:0 -e match:"1/1 addresses added." \
+	    jexec alcatraz pfctl -t foo -T add 1.2.3.4
+	atf_check -s exit:0 -o match:"   1.2.3.4" \
+	    jexec alcatraz pfctl -t foo -T show
+	atf_check -s exit:0 -e match:"1 addresses deleted." \
+	    jexec alcatraz pfctl -t foo -T flush
+	atf_check -s exit:0 -o not-match:"1.2.3.4" \
+	    jexec alcatraz pfctl -t foo -T show
+}
+
+flush_cleanup()
+{
+	pft_cleanup
+}
+
+atf_test_case "large" "cleanup"
+large_head()
+{
+	atf_set descr 'Test loading a large list of addresses'
+	atf_set require.user root
+}
+
+large_body()
+{
+	pft_init
+	pwd=$(pwd)
+
+	vnet_mkjail alcatraz
+
+	for i in `seq 1 255`; do
+		for j in `seq 1 255`; do
+			echo "1.2.${i}.${j}" >> ${pwd}/foo.lst
+		done
+	done
+	expected=$(wc -l foo.lst | awk '{ print $1; }')
+
+	jexec alcatraz pfctl -e
+	pft_set_rules alcatraz \
+		"table <foo>" \
+		"pass in from <foo>" \
+		"pass"
+
+	atf_check -s exit:0 \
+	    -e match:"${expected}/${expected} addresses added." \
+	    jexec alcatraz pfctl -t foo -T add -f ${pwd}/foo.lst
+	actual=$(jexec alcatraz pfctl -t foo -T show | wc -l | awk '{ print $1; }')
+	if [ $actual -ne $expected ]; then
+		atf_fail "Unexpected number of table entries $expected $acual"
+	fi
+
+	# The second pass should work too, but confirm we've inserted everything
+	atf_check -s exit:0 \
+	    -e match:"0/${expected} addresses added." \
+	    jexec alcatraz pfctl -t foo -T add -f ${pwd}/foo.lst
+
+	echo '42.42.42.42' >> ${pwd}/foo.lst
+	expected=$((${expected} + 1))
+
+	# And we can also insert one additional address
+	atf_check -s exit:0 \
+	    -e match:"1/${expected} addresses added." \
+	    jexec alcatraz pfctl -t foo -T add -f ${pwd}/foo.lst
+
+	# Try to delete one address
+	atf_check -s exit:0 \
+	    -e match:"1/1 addresses deleted." \
+	    jexec alcatraz pfctl -t foo -T delete 42.42.42.42
+	# And again, for the same address
+	atf_check -s exit:0 \
+	    -e match:"0/1 addresses deleted." \
+	    jexec alcatraz pfctl -t foo -T delete 42.42.42.42
+}
+
+large_cleanup()
+{
+	pft_cleanup
+}
+
+atf_test_case "show_recursive" "cleanup"
+show_recursive_head()
+{
+	atf_set descr 'Test displaying tables in every anchor'
+	atf_set require.user root
+}
+
+show_recursive_body()
+{
+	pft_init
+
+	vnet_mkjail alcatraz
+
+	pft_set_rules alcatraz \
+
+	(echo "table <bar> persist"
+	 echo "block in quick from <bar> to any"
+	) | jexec alcatraz pfctl -a anchorage -f -
+
+	pft_set_rules noflush alcatraz \
+	    "table <foo> counters { 192.0.2.1 }" \
+	    "pass in from <foo>" \
+	    "anchor anchorage"
+
+	jexec alcatraz pfctl -sr -a "*"
+
+	atf_check -s exit:0 -e ignore -o match:'-pa-r--	bar@anchorage' \
+	    jexec alcatraz pfctl -v -a "*" -sT
+	atf_check -s exit:0 -e ignore -o match:'--a-r-C	foo' \
+	    jexec alcatraz pfctl -v -a "*" -sT
+}
+
+show_recursive_cleanup()
+{
+	pft_cleanup
+}
+
+atf_test_case "in_anchor" "cleanup"
+in_anchor_head()
+{
+	atf_set descr 'Test declaring tables in anchors'
+	atf_set require.user root
+}
+
+in_anchor_body()
+{
+	pft_init
+
+	epair_send=$(vnet_mkepair)
+	ifconfig ${epair_send}a 192.0.2.1/24 up
+
+	vnet_mkjail alcatraz ${epair_send}b
+	jexec alcatraz ifconfig ${epair_send}b 192.0.2.2/24 up
+
+	jexec alcatraz pfctl -e
+
+	pft_set_rules alcatraz \
+	    "block all" \
+	    "anchor \"foo\" {\n
+	        table <bar> counters { 192.0.2.1 }\n
+	        pass in from <bar>\n
+	    }\n"
+
+	atf_check -s exit:0 -o ignore ping -c 3 192.0.2.2
+
+	jexec alcatraz pfctl -sr -a "*" -vv
+	jexec alcatraz pfctl -sT -a "*" -vv
+}
+
+in_anchor_cleanup()
+{
+	pft_cleanup
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case "v4_counters"
@@ -596,4 +761,8 @@ atf_init_test_cases()
 	atf_add_test_case "pr259689"
 	atf_add_test_case "precreate"
 	atf_add_test_case "anchor"
+	atf_add_test_case "flush"
+	atf_add_test_case "large"
+	atf_add_test_case "show_recursive"
+	atf_add_test_case "in_anchor"
 }

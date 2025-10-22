@@ -84,10 +84,10 @@
 
 #include <security/mac/mac_framework.h>
 
+#define	ND6_PREFIX_WITH_ROUTER(pr)	!LIST_EMPTY(&(pr)->ndpr_advrtrs)
+
 #define ND6_SLOWTIMER_INTERVAL (60 * 60) /* 1 hour */
 #define ND6_RECALC_REACHTM_INTERVAL (60 * 120) /* 2 hours */
-
-#define SIN6(s) ((const struct sockaddr_in6 *)(s))
 
 MALLOC_DEFINE(M_IP6NDP, "ip6ndp", "IPv6 Neighbor Discovery");
 
@@ -324,6 +324,11 @@ nd6_ifattach(struct ifnet *ifp)
 
 	/* XXX: we cannot call nd6_setmtu since ifp is not fully initialized */
 	nd6_setmtu0(ifp, nd);
+
+	/* Configure default value for stable addresses algorithm, skip loopback interface */
+	if (V_ip6_use_stableaddr && !(ifp->if_flags & IFF_LOOPBACK)) {
+		nd->flags |= ND6_IFF_STABLEADDR;
+	}
 
 	return nd;
 }
@@ -1797,7 +1802,7 @@ nd6_ioctl(u_long cmd, caddr_t data, struct ifnet *ifp)
 
 		ND6_WLOCK();
 		LIST_FOREACH_SAFE(pr, &V_nd_prefix, ndpr_entry, next) {
-			if (pr->ndpr_raf_ra_derived)
+			if (ND6_PREFIX_WITH_ROUTER(pr))
 				nd6_prefix_unlink(pr, &prl);
 		}
 		ND6_WUNLOCK();
@@ -2687,8 +2692,6 @@ nd6_sysctl_prlist(SYSCTL_HANDLER_ARGS)
 
 	ND6_RLOCK();
 	LIST_FOREACH(pr, &V_nd_prefix, ndpr_entry) {
-		if (!pr->ndpr_raf_ra_derived)
-			continue;
 		p.prefix = pr->ndpr_prefix;
 		if (sa6_recoverscope(&p.prefix)) {
 			log(LOG_ERR, "scope error in prefix list (%s)\n",

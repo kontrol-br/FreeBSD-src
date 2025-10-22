@@ -58,6 +58,7 @@
 #include <sys/nv.h>
 #include <sys/rwlock.h>
 #include <sys/sockio.h>
+#include <sys/stdarg.h>
 #include <sys/syslog.h>
 #include <sys/sysctl.h>
 #include <sys/sysent.h>
@@ -70,11 +71,9 @@
 #include <ddb/ddb.h>
 #endif
 
-#include <machine/stdarg.h>
 #include <vm/uma.h>
 
 #include <net/bpf.h>
-#include <net/ethernet.h>
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <net/if_clone.h>
@@ -307,6 +306,9 @@ VNET_DEFINE(struct hhook_head *, ipsec_hhh_out[HHOOK_IPSEC_COUNT]);
 int	ifqmaxlen = IFQ_MAXLEN;
 VNET_DEFINE(struct ifnethead, ifnet);	/* depend on static init XXX */
 VNET_DEFINE(struct ifgrouphead, ifg_head);
+
+#define V_allow_carp_src	VNET(allow_carp_src)
+VNET_DECLARE(bool, allow_carp_src);
 
 /* Table of ifnet by index. */
 static int if_index;
@@ -930,21 +932,6 @@ if_attach_internal(struct ifnet *ifp, bool vmove)
 		}
 #endif
 	}
-#ifdef VIMAGE
-	else {
-		/*
-		 * Update the interface index in the link layer address
-		 * of the interface.
-		 */
-		for (ifa = ifp->if_addr; ifa != NULL;
-		    ifa = CK_STAILQ_NEXT(ifa, ifa_link)) {
-			if (ifa->ifa_addr->sa_family == AF_LINK) {
-				sdl = (struct sockaddr_dl *)ifa->ifa_addr;
-				sdl->sdl_index = ifp->if_index;
-			}
-		}
-	}
-#endif
 
 	if (domain_init_status >= 2)
 		if_attachdomain1(ifp);
@@ -1117,6 +1104,7 @@ if_detach_internal(struct ifnet *ifp, bool vmove)
 	struct ifaddr *ifa;
 	int i;
 	struct domain *dp;
+	void *if_afdata[AF_MAX];
 #ifdef VIMAGE
 	bool shutdown;
 
@@ -1240,15 +1228,30 @@ finish_vnet_shutdown:
 	IF_AFDATA_LOCK(ifp);
 	i = ifp->if_afdata_initialized;
 	ifp->if_afdata_initialized = 0;
+	if (i != 0) {
+		/*
+		 * Defer the dom_ifdetach call.
+		 */
+		_Static_assert(sizeof(if_afdata) == sizeof(ifp->if_afdata),
+		    "array size mismatch");
+		memcpy(if_afdata, ifp->if_afdata, sizeof(if_afdata));
+		memset(ifp->if_afdata, 0, sizeof(ifp->if_afdata));
+	}
 	IF_AFDATA_UNLOCK(ifp);
 	if (i == 0)
 		return;
+	/*
+	 * XXXZL: This net epoch wait is not necessary if we have done right.
+	 * But if we do not, at least we can make a guarantee that threads those
+	 * enter net epoch will see NULL address family dependent data,
+	 * e.g. if_afdata[AF_INET6]. A clear NULL pointer derefence is much
+	 * better than writing to freed memory.
+	 */
+	NET_EPOCH_WAIT();
 	SLIST_FOREACH(dp, &domains, dom_next) {
-		if (dp->dom_ifdetach && ifp->if_afdata[dp->dom_family]) {
-			(*dp->dom_ifdetach)(ifp,
-			    ifp->if_afdata[dp->dom_family]);
-			ifp->if_afdata[dp->dom_family] = NULL;
-		}
+		if (dp->dom_ifdetach != NULL &&
+		    if_afdata[dp->dom_family] != NULL)
+			(*dp->dom_ifdetach)(ifp, if_afdata[dp->dom_family]);
 	}
 }
 
@@ -2020,6 +2023,9 @@ ifaof_ifpforaddr(const struct sockaddr *addr, struct ifnet *ifp)
 	CK_STAILQ_FOREACH(ifa, &ifp->if_addrhead, ifa_link) {
 		if (ifa->ifa_addr->sa_family != af)
 			continue;
+		if (!V_allow_carp_src && ifa_maybe != NULL &&
+		    !ifa_preferred(ifa_maybe, ifa))
+			continue;
 		if (ifa_maybe == NULL)
 			ifa_maybe = ifa;
 		if (ifa->ifa_netmask == 0) {
@@ -2104,6 +2110,7 @@ int	(*vlan_tag_p)(struct ifnet *, uint16_t *);
 int	(*vlan_pcp_p)(struct ifnet *, uint16_t *);
 int	(*vlan_setcookie_p)(struct ifnet *, void *);
 void	*(*vlan_cookie_p)(struct ifnet *);
+void	(*vlan_input_p)(struct ifnet *, struct mbuf *);
 
 /*
  * Handle a change in the interface link state. To avoid LORs
@@ -2603,16 +2610,7 @@ ifhwioctl(u_long cmd, struct ifnet *ifp, caddr_t data, struct thread *td)
 		 * flip.  They require special handling because in-kernel
 		 * consumers may indepdently toggle them.
 		 */
-		if ((ifp->if_flags ^ new_flags) & IFF_PPROMISC) {
-			if (new_flags & IFF_PPROMISC)
-				ifp->if_flags |= IFF_PROMISC;
-			else if (ifp->if_pcount == 0)
-				ifp->if_flags &= ~IFF_PROMISC;
-			if (log_promisc_mode_change)
-                                if_printf(ifp, "permanently promiscuous mode %s\n",
-                                    ((new_flags & IFF_PPROMISC) ?
-                                     "enabled" : "disabled"));
-		}
+		if_setppromisc(ifp, new_flags & IFF_PPROMISC);
 		if ((ifp->if_flags ^ new_flags) & IFF_PALLMULTI) {
 			if (new_flags & IFF_PALLMULTI)
 				ifp->if_flags |= IFF_ALLMULTI;
@@ -4470,6 +4468,32 @@ if_getmtu_family(const if_t ifp, int family)
 	return (ifp->if_mtu);
 }
 
+void
+if_setppromisc(if_t ifp, bool ppromisc)
+{
+	int new_flags;
+
+	if (ppromisc)
+		new_flags = ifp->if_flags | IFF_PPROMISC;
+	else
+		new_flags = ifp->if_flags & ~IFF_PPROMISC;
+	if ((ifp->if_flags ^ new_flags) & IFF_PPROMISC) {
+		if (new_flags & IFF_PPROMISC)
+			new_flags |= IFF_PROMISC;
+		/*
+		 * Only unset IFF_PROMISC if there are no more consumers of
+		 * promiscuity, i.e. the ifp->if_pcount refcount is 0.
+		 */
+		else if (ifp->if_pcount == 0)
+			new_flags &= ~IFF_PROMISC;
+		if (log_promisc_mode_change)
+                        if_printf(ifp, "permanently promiscuous mode %s\n",
+                            ((new_flags & IFF_PPROMISC) ?
+                             "enabled" : "disabled"));
+	}
+	ifp->if_flags = new_flags;
+}
+
 /*
  * Methods for drivers to access interface unicast and multicast
  * link level addresses.  Driver shall not know 'struct ifaddr' neither
@@ -4870,9 +4894,16 @@ if_sendq_enqueue(if_t ifp, struct mbuf *m)
 	int err;
 
 	IF_LOCK(ifq);\
-	if (ALTQ_IS_ENABLED(ifq))
+	if (ALTQ_IS_ENABLED(ifq)) {
 		ALTQ_ENQUEUE(ifq, m, NULL, err);
-	else {
+		/*
+		 * ALTQ returns ENOBUFS if it discards a packet. This confuses users into
+		 * thinking something is wrong, (rather than ALTQ working as expected), so hide
+		 * this error.
+		*/
+		if (err == ENOBUFS)
+			err = 0;
+	} else {
 		if (_IF_QFULL(ifq)) {
 			m_freem(m);
 			err = ENOBUFS;

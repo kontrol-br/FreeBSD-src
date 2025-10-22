@@ -52,8 +52,7 @@ uint8_t *	ieee80211_add_vhtinfo(uint8_t *frm, struct ieee80211_node *);
 uint8_t *ieee80211_add_vhtcap_ch(uint8_t *, struct ieee80211vap *,
     struct ieee80211_channel *);
 
-void	ieee80211_vht_update_cap(struct ieee80211_node *,
-	    const uint8_t *, const uint8_t *);
+void	ieee80211_vht_update_cap(struct ieee80211_node *, const uint8_t *);
 
 struct ieee80211_channel *
 	ieee80211_vht_adjust_channel(struct ieee80211com *,
@@ -66,8 +65,8 @@ void	ieee80211_vht_get_vhtinfo_ie(struct ieee80211_node *ni,
 
 bool	ieee80211_vht_check_tx_vht(const struct ieee80211_node *);
 bool	ieee80211_vht_check_tx_bw(const struct ieee80211_node *,
-	    enum ieee80211_sta_rx_bw);
+	    enum net80211_sta_rx_bw);
 bool	ieee80211_vht_node_check_tx_valid_mcs(const struct ieee80211_node *,
-	    enum ieee80211_sta_rx_bw bw, uint8_t, uint8_t);
+	    enum net80211_sta_rx_bw bw, uint8_t, uint8_t);
 
 #endif	/* _NET80211_IEEE80211_VHT_H_ */

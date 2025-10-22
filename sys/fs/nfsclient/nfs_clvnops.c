@@ -106,6 +106,7 @@ uint32_t	nfscl_accesscache_load_done_id;
 extern struct nfsstatsv1 nfsstatsv1;
 extern int nfsrv_useacl;
 extern int nfscl_debuglevel;
+NFSCLSTATEMUTEX;
 MALLOC_DECLARE(M_NEWNFSREQ);
 
 static vop_read_t	nfsfifo_read;
@@ -250,10 +251,13 @@ VFS_VOP_VECTOR_REGISTER(newnfs_fifoops);
 static int nfs_mknodrpc(struct vnode *dvp, struct vnode **vpp,
     struct componentname *cnp, struct vattr *vap);
 static int nfs_removerpc(struct vnode *dvp, struct vnode *vp, char *name,
-    int namelen, struct ucred *cred, struct thread *td);
+    int namelen, struct ucred *cred, struct thread *td, bool silly);
+static void nfs_removestatus(struct vnode *vp, nfsremove_status file_status,
+    bool silly, struct thread *td);
 static int nfs_renamerpc(struct vnode *fdvp, struct vnode *fvp,
     char *fnameptr, int fnamelen, struct vnode *tdvp, struct vnode *tvp,
-    char *tnameptr, int tnamelen, struct ucred *cred, struct thread *td);
+    char *tnameptr, int tnamelen, bool silly, struct ucred *cred,
+    struct thread *td);
 static int nfs_renameit(struct vnode *sdvp, struct vnode *svp,
     struct componentname *scnp, struct sillyrename *sp);
 
@@ -476,6 +480,18 @@ nfs_access(struct vop_access_args *ap)
 			break;
 		}
 	}
+
+	/*
+	 * For NFSv4, check for a delegation with an Allow ACE, to see
+	 * if that permits access.
+	 */
+	if ((VFSTONFS(vp->v_mount)->nm_flag & NFSMNT_NOCTO) != 0) {
+		error = nfscl_delegacecheck(vp, ap->a_accmode, ap->a_cred);
+		if (error == 0)
+			return (error);
+		error = 0;
+	}
+
 	/*
 	 * For nfs v3 or v4, check to see if we have done this recently, and if
 	 * so return our cached result instead of making an ACCESS call.
@@ -829,9 +845,11 @@ nfs_close(struct vop_close_args *ap)
 	struct ucred *cred;
 	int error = 0, ret, localcred = 0;
 	int fmode = ap->a_fflag;
+	struct nfsmount *nmp;
 
 	if (NFSCL_FORCEDISM(vp->v_mount))
 		return (0);
+	nmp = VFSTONFS(vp->v_mount);
 	/*
 	 * During shutdown, a_cred isn't valid, so just use root.
 	 */
@@ -885,7 +903,9 @@ nfs_close(struct vop_close_args *ap)
 		    error = ncl_flush(vp, MNT_WAIT, ap->a_td, cm, 0);
 		    /* np->n_flag &= ~NMODIFIED; */
 		} else if (NFS_ISV4(vp)) { 
-			if (nfscl_mustflush(vp) != 0) {
+			if (!NFSHASNFSV4N(nmp) ||
+			    (nmp->nm_flag & NFSMNT_NOCTO) == 0 ||
+			    nfscl_mustflush(vp) != 0) {
 				int cm = newnfs_commit_on_close ? 1 : 0;
 				if (VOP_ISLOCKED(vp) != LK_EXCLUSIVE) {
 					NFSVOPLOCK(vp, LK_UPGRADE | LK_RETRY);
@@ -927,7 +947,7 @@ nfs_close(struct vop_close_args *ap)
 	     *     is the cause of some caching/coherency issue that might
 	     *     crop up.)
  	     */
-	    if (VFSTONFS(vp->v_mount)->nm_negnametimeo == 0) {
+	    if (nmp->nm_negnametimeo == 0) {
 		    np->n_attrstamp = 0;
 		    KDTRACE_NFS_ATTRCACHE_FLUSH_DONE(vp);
 	    }
@@ -944,7 +964,7 @@ nfs_close(struct vop_close_args *ap)
 		 */
 		if (error == 0 && nfscl_nodeleg(vp, 0) != 0 &&
 		    vp->v_type == VREG &&
-		    (VFSTONFS(vp->v_mount)->nm_flag & NFSMNT_NOCTO) == 0) {
+		    (nmp->nm_flag & NFSMNT_NOCTO) == 0) {
 			ret = nfsrpc_getattr(vp, cred, ap->a_td, &nfsva);
 			if (!ret) {
 				np->n_change = nfsva.na_filerev;
@@ -1006,7 +1026,7 @@ nfs_getattr(struct vop_getattr_args *ap)
 	 * cached attributes should be ignored.
 	 */
 	if (nmp->nm_fhsize > 0 && ncl_getattrcache(vp, &vattr) == 0) {
-		ncl_copy_vattr(vap, &vattr);
+		ncl_copy_vattr(vp, vap, &vattr);
 
 		/*
 		 * Get the local modify time for the case of a write
@@ -1025,8 +1045,9 @@ nfs_getattr(struct vop_getattr_args *ap)
 			return (0);
 		}
 	}
+
 	error = nfsrpc_getattr(vp, ap->a_cred, td, &nfsva);
-	if (!error)
+	if (error == 0)
 		error = nfscl_loadattrcache(&vp, &nfsva, vap, 0, 0);
 	if (!error) {
 		/*
@@ -1053,21 +1074,29 @@ nfs_setattr(struct vop_setattr_args *ap)
 	int error = 0;
 	u_quad_t tsize;
 	struct timespec ts;
+	struct nfsmount *nmp;
 
 #ifndef nolint
 	tsize = (u_quad_t)0;
 #endif
 
 	/*
-	 * Setting of flags and marking of atimes are not supported.
+	 * Only setting of UF_HIDDEN and UF_SYSTEM are supported and
+	 * only for NFSv4 servers that support them.
 	 */
-	if (vap->va_flags != VNOVAL)
+	nmp = VFSTONFS(vp->v_mount);
+	if (vap->va_flags != VNOVAL && (!NFSHASNFSV4(nmp) ||
+	    (vap->va_flags & ~(UF_HIDDEN | UF_SYSTEM)) != 0 ||
+	    ((vap->va_flags & UF_HIDDEN) != 0 &&
+	     !NFSISSET_ATTRBIT(&np->n_vattr.na_suppattr, NFSATTRBIT_HIDDEN)) ||
+	    ((vap->va_flags & UF_SYSTEM) != 0 &&
+	     !NFSISSET_ATTRBIT(&np->n_vattr.na_suppattr, NFSATTRBIT_SYSTEM))))
 		return (EOPNOTSUPP);
 
 	/*
 	 * Disallow write attempts if the filesystem is mounted read-only.
 	 */
-  	if ((vap->va_flags != VNOVAL || vap->va_uid != (uid_t)VNOVAL ||
+	if ((vap->va_flags != (u_long)VNOVAL || vap->va_uid != (uid_t)VNOVAL ||
 	    vap->va_gid != (gid_t)VNOVAL || vap->va_atime.tv_sec != VNOVAL ||
 	    vap->va_mtime.tv_sec != VNOVAL ||
 	    vap->va_birthtime.tv_sec != VNOVAL ||
@@ -1255,7 +1284,7 @@ nfs_lookup(struct vop_lookup_args *ap)
 	bool is_nameddir, needs_nameddir, opennamed;
 
 	dattrflag = 0;
-	*vpp = NULLVP;
+	*vpp = NULL;
 	nmp = VFSTONFS(mp);
 	opennamed = (flags & (OPENNAMED | ISLASTCN)) == (OPENNAMED | ISLASTCN);
 	if (opennamed && (!NFSHASNFSV4(nmp) || !NFSHASNFSV4N(nmp)))
@@ -1280,7 +1309,7 @@ nfs_lookup(struct vop_lookup_args *ap)
 	/*
 	 * If the named attribute directory is needed, acquire it now.
 	 */
-	newvp = NULLVP;
+	newvp = NULL;
 	if (needs_nameddir) {
 		KASSERT(np->n_v4 == NULL, ("nfs_lookup: O_NAMEDATTR when"
 		    " n_v4 not NULL"));
@@ -1293,10 +1322,10 @@ nfs_lookup(struct vop_lookup_args *ap)
 		}
 		dvp = newvp;
 		np = VTONFS(dvp);
-		newvp = NULLVP;
+		newvp = NULL;
 	} else if (opennamed && cnp->cn_namelen == 1 &&
 	    *cnp->cn_nameptr == '.') {
-		VREF(dvp);
+		vref(dvp);
 		*vpp = dvp;
 		return (0);
 	}
@@ -1370,7 +1399,7 @@ nfs_lookup(struct vop_lookup_args *ap)
 				vput(newvp);
 			else
 				vrele(newvp);
-			*vpp = NULLVP;
+			*vpp = NULL;
 		} else if (error == ENOENT) {
 			if (VN_IS_DOOMED(dvp))
 				return (ENOENT);
@@ -1421,7 +1450,7 @@ nfs_lookup(struct vop_lookup_args *ap)
 	NFSUNLOCKMNT(nmp);
 #endif
 
-	newvp = NULLVP;
+	newvp = NULL;
 	NFSINCRGLOBAL(nfsstatsv1.lookupcache_misses);
 	nanouptime(&ts);
 	error = nfsrpc_lookup(dvp, cnp->cn_nameptr, cnp->cn_namelen,
@@ -1435,9 +1464,9 @@ nfs_lookup(struct vop_lookup_args *ap)
 	}
 handle_error:
 	if (error) {
-		if (newvp != NULLVP) {
+		if (newvp != NULL) {
 			vput(newvp);
-			*vpp = NULLVP;
+			*vpp = NULL;
 		}
 
 		if (error != ENOENT) {
@@ -1558,7 +1587,7 @@ handle_error:
 			    0, 1);
 	} else if (NFS_CMPFH(np, nfhp->nfh_fh, nfhp->nfh_len)) {
 		free(nfhp, M_NFSFH);
-		VREF(dvp);
+		vref(dvp);
 		newvp = dvp;
 		if (attrflag)
 			(void) nfscl_loadattrcache(&newvp, &nfsva, NULL,
@@ -1753,7 +1782,7 @@ nfs_mknodrpc(struct vnode *dvp, struct vnode **vpp, struct componentname *cnp,
 	int error = 0, attrflag, dattrflag;
 	u_int32_t rdev;
 
-	if (vap->va_type == VCHR || vap->va_type == VBLK)
+	if (VATTR_ISDEV(vap))
 		rdev = vap->va_rdev;
 	else if (vap->va_type == VFIFO || vap->va_type == VSOCK)
 		rdev = 0xffffffff;
@@ -1999,6 +2028,7 @@ nfs_remove(struct vop_remove_args *ap)
 	struct nfsnode *np = VTONFS(vp);
 	int error = 0;
 	struct vattr vattr;
+	struct nfsmount *nmp;
 
 	KASSERT(vrefcnt(vp) > 0, ("nfs_remove: bad v_usecount"));
 	if (vp->v_type == VDIR)
@@ -2006,6 +2036,7 @@ nfs_remove(struct vop_remove_args *ap)
 	else if (vrefcnt(vp) == 1 || (np->n_sillyrename &&
 	    VOP_GETATTR(vp, &vattr, cnp->cn_cred) == 0 &&
 	    vattr.va_nlink > 1)) {
+		nmp = VFSTONFS(vp->v_mount);
 		/*
 		 * Purge the name cache so that the chance of a lookup for
 		 * the name succeeding while the remove is in progress is
@@ -2017,12 +2048,19 @@ nfs_remove(struct vop_remove_args *ap)
 		/*
 		 * throw away biocache buffers, mainly to avoid
 		 * unnecessary delayed writes later.
+		 * Flushing here would be more correct for the case
+		 * where nfs_close() did not do a flush.  However, it
+		 * could be a large performance hit for some servers
+		 * and only matters when the file name being removed is
+		 * one of multiple hard links.
 		 */
-		error = ncl_vinvalbuf(vp, 0, curthread, 1);
+		if (!NFSHASNFSV4(nmp) || !NFSHASNFSV4N(nmp) ||
+		    (nmp->nm_flag & NFSMNT_NOCTO) == 0)
+			error = ncl_vinvalbuf(vp, 0, curthread, 1);
 		if (error != EINTR && error != EIO)
 			/* Do the rpc */
 			error = nfs_removerpc(dvp, vp, cnp->cn_nameptr,
-			    cnp->cn_namelen, cnp->cn_cred, curthread);
+			    cnp->cn_namelen, cnp->cn_cred, curthread, false);
 		/*
 		 * Kludge City: If the first reply to the remove rpc is lost..
 		 *   the reply to the retransmitted request will be ENOENT
@@ -2053,7 +2091,32 @@ ncl_removeit(struct sillyrename *sp, struct vnode *vp)
 	if (sp->s_dvp->v_type == VBAD)
 		return (0);
 	return (nfs_removerpc(sp->s_dvp, vp, sp->s_name, sp->s_namlen,
-	    sp->s_cred, NULL));
+	    sp->s_cred, NULL, true));
+}
+
+/*
+ * Handle the nfsremove_status reply from the RPC function.
+ */
+static void
+nfs_removestatus(struct vnode *vp, nfsremove_status file_status,
+    bool silly, struct thread *td)
+{
+
+	switch (file_status) {
+	case NLINK_ZERO:
+		/* Get rid of any delegation. */
+		nfscl_delegreturnvp(vp, false, td);
+		/* FALLTHROUGH */
+	case DELETED:
+		/* Throw away buffer cache blocks. */
+		(void)ncl_vinvalbuf(vp, 0, td, 1);
+		break;
+	case VALID:
+		/* Nothing to do, delegation is still ok. */
+		break;
+	default:
+		break;
+	}
 }
 
 /*
@@ -2061,17 +2124,20 @@ ncl_removeit(struct sillyrename *sp, struct vnode *vp)
  */
 static int
 nfs_removerpc(struct vnode *dvp, struct vnode *vp, char *name,
-    int namelen, struct ucred *cred, struct thread *td)
+    int namelen, struct ucred *cred, struct thread *td, bool silly)
 {
-	struct nfsvattr dnfsva;
+	struct nfsvattr dnfsva, nfsva;
 	struct nfsnode *dnp = VTONFS(dvp);
-	int error = 0, dattrflag;
+	struct nfsmount *nmp;
+	int attrflag, error = 0, dattrflag;
+	nfsremove_status file_status;
 
+	nmp = VFSTONFS(dvp->v_mount);
 	NFSLOCKNODE(dnp);
 	dnp->n_flag |= NREMOVEINPROG;
 	NFSUNLOCKNODE(dnp);
-	error = nfsrpc_remove(dvp, name, namelen, vp, cred, td, &dnfsva,
-	    &dattrflag);
+	error = nfsrpc_remove(dvp, name, namelen, vp, &nfsva, &attrflag,
+	    &file_status, &dnfsva, &dattrflag, cred, td);
 	NFSLOCKNODE(dnp);
 	if ((dnp->n_flag & NREMOVEWANT)) {
 		dnp->n_flag &= ~(NREMOVEWANT | NREMOVEINPROG);
@@ -2081,11 +2147,19 @@ nfs_removerpc(struct vnode *dvp, struct vnode *vp, char *name,
 		dnp->n_flag &= ~NREMOVEINPROG;
 		NFSUNLOCKNODE(dnp);
 	}
-	if (dattrflag)
+
+	if (NFSHASNFSV4(nmp) && NFSHASNFSV4N(nmp)) {
+		if (file_status != DELETED && attrflag != 0)
+			(void)nfscl_loadattrcache(&vp, &nfsva, NULL, 0, 1);
+		if ((nmp->nm_flag & NFSMNT_NOCTO) != 0)
+			nfs_removestatus(vp, file_status, silly, td);
+	}
+
+	if (dattrflag != 0)
 		(void) nfscl_loadattrcache(&dvp, &dnfsva, NULL, 0, 1);
 	NFSLOCKNODE(dnp);
 	dnp->n_flag |= NMODIFIED;
-	if (!dattrflag) {
+	if (dattrflag == 0) {
 		dnp->n_attrstamp = 0;
 		KDTRACE_NFS_ATTRCACHE_FLUSH_DONE(dvp);
 	}
@@ -2110,6 +2184,7 @@ nfs_rename(struct vop_rename_args *ap)
 	struct nfsnode *fnp = VTONFS(ap->a_fvp);
 	struct nfsnode *tdnp = VTONFS(ap->a_tdvp);
 	struct nfsv4node *newv4 = NULL;
+	struct nfsmount *nmp;
 	int error;
 
 	/* Check for cross-device rename */
@@ -2118,6 +2193,7 @@ nfs_rename(struct vop_rename_args *ap)
 		error = EXDEV;
 		goto out;
 	}
+	nmp = VFSTONFS(fvp->v_mount);
 
 	if (fvp == tvp) {
 		printf("nfs_rename: fvp == tvp (can't happen)\n");
@@ -2140,11 +2216,15 @@ nfs_rename(struct vop_rename_args *ap)
 	 * that was written back to our cache earlier. Not checking for
 	 * this condition can result in potential (silent) data loss.
 	 */
-	error = VOP_FSYNC(fvp, MNT_WAIT, curthread);
+	if ((nmp->nm_flag & NFSMNT_NOCTO) == 0 || !NFSHASNFSV4(nmp) ||
+	    !NFSHASNFSV4N(nmp) || nfscl_mustflush(fvp) != 0)
+		error = VOP_FSYNC(fvp, MNT_WAIT, curthread);
 	NFSVOPUNLOCK(fvp);
-	if (!error && tvp)
+	if (error == 0 && tvp != NULL && ((nmp->nm_flag & NFSMNT_NOCTO) == 0 ||
+	    !NFSHASNFSV4(nmp) || !NFSHASNFSV4N(nmp) ||
+	    nfscl_mustflush(tvp) != 0))
 		error = VOP_FSYNC(tvp, MNT_WAIT, curthread);
-	if (error)
+	if (error != 0)
 		goto out;
 
 	/*
@@ -2159,7 +2239,7 @@ nfs_rename(struct vop_rename_args *ap)
 	}
 
 	error = nfs_renamerpc(fdvp, fvp, fcnp->cn_nameptr, fcnp->cn_namelen,
-	    tdvp, tvp, tcnp->cn_nameptr, tcnp->cn_namelen, tcnp->cn_cred,
+	    tdvp, tvp, tcnp->cn_nameptr, tcnp->cn_namelen, false, tcnp->cn_cred,
 	    curthread);
 
 	if (error == 0 && NFS_ISV4(tdvp)) {
@@ -2228,7 +2308,7 @@ nfs_renameit(struct vnode *sdvp, struct vnode *svp, struct componentname *scnp,
 {
 
 	return (nfs_renamerpc(sdvp, svp, scnp->cn_nameptr, scnp->cn_namelen,
-	    sdvp, NULL, sp->s_name, sp->s_namlen, scnp->cn_cred,
+	    sdvp, NULL, sp->s_name, sp->s_namlen, true, scnp->cn_cred,
 	    curthread));
 }
 
@@ -2238,16 +2318,19 @@ nfs_renameit(struct vnode *sdvp, struct vnode *svp, struct componentname *scnp,
 static int
 nfs_renamerpc(struct vnode *fdvp, struct vnode *fvp, char *fnameptr,
     int fnamelen, struct vnode *tdvp, struct vnode *tvp, char *tnameptr,
-    int tnamelen, struct ucred *cred, struct thread *td)
+    int tnamelen, bool silly, struct ucred *cred, struct thread *td)
 {
-	struct nfsvattr fnfsva, tnfsva;
+	struct nfsvattr fnfsva, tnfsva, tvpnfsva;
 	struct nfsnode *fdnp = VTONFS(fdvp);
 	struct nfsnode *tdnp = VTONFS(tdvp);
-	int error = 0, fattrflag, tattrflag;
+	struct nfsmount *nmp;
+	int error = 0, fattrflag, tattrflag, tvpattrflag;
+	nfsremove_status tvp_status;
 
+	nmp = VFSTONFS(fdvp->v_mount);
 	error = nfsrpc_rename(fdvp, fvp, fnameptr, fnamelen, tdvp, tvp,
-	    tnameptr, tnamelen, cred, td, &fnfsva, &tnfsva, &fattrflag,
-	    &tattrflag);
+	    tnameptr, tnamelen, &tvp_status, &fnfsva, &tnfsva, &fattrflag,
+	    &tattrflag, &tvpnfsva, &tvpattrflag, cred, td);
 	NFSLOCKNODE(fdnp);
 	fdnp->n_flag |= NMODIFIED;
 	if (fattrflag != 0) {
@@ -2268,6 +2351,15 @@ nfs_renamerpc(struct vnode *fdvp, struct vnode *fvp, char *fnameptr,
 		NFSUNLOCKNODE(tdnp);
 		KDTRACE_NFS_ATTRCACHE_FLUSH_DONE(tdvp);
 	}
+
+	if (tvp != NULL) {
+		if (NFSHASNFSV4(nmp) && NFSHASNFSV4N(nmp) &&
+		    (nmp->nm_flag & NFSMNT_NOCTO) != 0)
+			nfs_removestatus(tvp, tvp_status, silly, td);
+		if (!silly && tvpattrflag != 0)
+			(void)nfscl_loadattrcache(&tvp, &tvpnfsva, NULL, 0, 1);
+	}
+
 	if (error && NFS_ISV4(fdvp))
 		error = nfscl_maperr(td, error, (uid_t)0, (gid_t)0);
 	return (error);
@@ -2291,7 +2383,9 @@ nfs_link(struct vop_link_args *ap)
 	 * doesn't get "out of sync" with the server.
 	 * XXX There should be a better way!
 	 */
+#ifdef notnow
 	VOP_FSYNC(vp, MNT_WAIT, curthread);
+#endif
 
 	error = nfsrpc_link(tdvp, vp, cnp->cn_nameptr, cnp->cn_namelen,
 	    cnp->cn_cred, curthread, &dnfsva, &nfsva, &attrflag, &dattrflag);
@@ -2769,7 +2863,7 @@ nfs_sillyrename(struct vnode *dvp, struct vnode *vp, struct componentname *cnp)
 	    M_NEWNFSREQ, M_WAITOK);
 	sp->s_cred = crhold(cnp->cn_cred);
 	sp->s_dvp = dvp;
-	VREF(dvp);
+	vref(dvp);
 
 	/* 
 	 * Fudge together a funny name.
@@ -2867,7 +2961,7 @@ nfs_lookitup(struct vnode *dvp, char *name, int len, struct ucred *cred,
 		    newvp = NFSTOV(np);
 		} else if (NFS_CMPFH(dnp, nfhp->nfh_fh, nfhp->nfh_len)) {
 		    free(nfhp, M_NFSFH);
-		    VREF(dvp);
+		    vref(dvp);
 		    newvp = dvp;
 		} else {
 		    cn.cn_nameptr = name;
@@ -3380,7 +3474,7 @@ nfs_advlock(struct vop_advlock_args *ap)
 	u_quad_t size;
 	struct nfsmount *nmp;
 
-	error = NFSVOPLOCK(vp, LK_SHARED);
+	error = NFSVOPLOCK(vp, LK_EXCLUSIVE);
 	if (error != 0)
 		return (EBADF);
 	nmp = VFSTONFS(vp->v_mount);
@@ -3417,11 +3511,6 @@ nfs_advlock(struct vop_advlock_args *ap)
 			cred = p->p_ucred;
 		else
 			cred = td->td_ucred;
-		NFSVOPLOCK(vp, LK_UPGRADE | LK_RETRY);
-		if (VN_IS_DOOMED(vp)) {
-			error = EBADF;
-			goto out;
-		}
 
 		/*
 		 * If this is unlocking a write locked region, flush and
@@ -3933,31 +4022,51 @@ nfs_copy_file_range(struct vop_copy_file_range_args *ap)
 	struct vattr va, *vap;
 	struct uio io;
 	struct nfsmount *nmp;
+	struct nfsnode *np;
 	size_t len, len2;
 	ssize_t r;
 	int error, inattrflag, outattrflag, ret, ret2, invp_lock;
 	off_t inoff, outoff;
-	bool consecutive, must_commit, tryoutcred;
+	bool consecutive, must_commit, onevp, toeof, tryclone, tryoutcred;
+	bool mustclone;
 
 	/*
 	 * NFSv4.2 Copy is not permitted for infile == outfile.
+	 * The NFSv4.2 Clone operation does work on non-overlapping
+	 * byte ranges in the same file, but only if offsets
+	 * (and len if not to EOF) are aligned properly.
 	 * TODO: copy_file_range() between multiple NFS mountpoints
+	 * --> This is not possible now, since each mount appears to
+	 *     the NFSv4.n server as a separate client.
 	 */
-	if (invp == outvp || invp->v_mount != outvp->v_mount) {
+	if ((invp == outvp && (ap->a_flags & COPY_FILE_RANGE_CLONE) == 0) ||
+	    (invp != outvp && invp->v_mount != outvp->v_mount)) {
 generic_copy:
 		return (ENOSYS);
 	}
-
-	invp_lock = LK_SHARED;
+	if (invp == outvp) {
+		onevp = true;
+		invp_lock = LK_EXCLUSIVE;
+	} else {
+		onevp = false;
+		invp_lock = LK_SHARED;
+	}
+	mustclone = false;
+	if (onevp || (ap->a_flags & COPY_FILE_RANGE_CLONE) != 0)
+		mustclone = true;
 relock:
+	inoff = *ap->a_inoffp;
+	outoff = *ap->a_outoffp;
 
-	/* Lock both vnodes, avoiding risk of deadlock. */
+	/* Lock vnode(s), avoiding risk of deadlock. */
 	do {
 		mp = NULL;
 		error = vn_start_write(outvp, &mp, V_WAIT);
 		if (error == 0) {
 			error = vn_lock(outvp, LK_EXCLUSIVE);
 			if (error == 0) {
+				if (onevp)
+					break;
 				error = vn_lock(invp, invp_lock | LK_NOWAIT);
 				if (error == 0)
 					break;
@@ -3977,16 +4086,24 @@ relock:
 		return (error);
 
 	/*
-	 * More reasons to avoid nfs copy: not NFSv4.2, or explicitly
-	 * disabled.
+	 * More reasons to avoid nfs copy/clone: not NFSv4.2, explicitly
+	 * disabled or requires cloning and unable to clone.
+	 * Only clone if the clone_blksize attribute is supported
+	 * and the clone_blksize is greater than 0.
+	 * Alignment of offsets and length will be checked later.
 	 */
 	nmp = VFSTONFS(invp->v_mount);
+	np = VTONFS(invp);
 	mtx_lock(&nmp->nm_mtx);
+	if ((nmp->nm_privflag & NFSMNTP_NOCOPY) != 0)
+		mustclone = true;
 	if (!NFSHASNFSV4(nmp) || nmp->nm_minorvers < NFSV42_MINORVERSION ||
-	    (nmp->nm_privflag & NFSMNTP_NOCOPY) != 0) {
+	    (mustclone && (!NFSISSET_ATTRBIT(&np->n_vattr.na_suppattr,
+	     NFSATTRBIT_CLONEBLKSIZE) || nmp->nm_cloneblksize == 0))) {
 		mtx_unlock(&nmp->nm_mtx);
 		VOP_UNLOCK(invp);
-		VOP_UNLOCK(outvp);
+		if (!onevp)
+			VOP_UNLOCK(outvp);	/* For onevp, same as invp. */
 		if (mp != NULL)
 			vn_finished_write(mp);
 		goto generic_copy;
@@ -4017,6 +4134,8 @@ relock:
 		invp_obj = invp->v_object;
 		if (invp_obj != NULL && vm_object_mightbedirty(invp_obj)) {
 			if (invp_lock != LK_EXCLUSIVE) {
+				KASSERT(!onevp, ("nfs_copy_file_range: "
+				    "invp_lock LK_SHARED for onevp"));
 				invp_lock = LK_EXCLUSIVE;
 				VOP_UNLOCK(invp);
 				VOP_UNLOCK(outvp);
@@ -4040,10 +4159,10 @@ relock:
 	else
 		consecutive = false;
 	mtx_unlock(&nmp->nm_mtx);
-	inoff = *ap->a_inoffp;
-	outoff = *ap->a_outoffp;
 	tryoutcred = true;
 	must_commit = false;
+	toeof = false;
+
 	if (error == 0) {
 		vap = &VTONFS(invp)->n_vattr.na_vattr;
 		error = VOP_GETATTR(invp, vap, ap->a_incred);
@@ -4075,29 +4194,63 @@ relock:
 					if (error == 0 && ret != 0)
 						error = ret;
 				}
-			} else if (inoff + len > vap->va_size)
+			} else if (inoff + len >= vap->va_size) {
+				toeof = true;
 				*ap->a_lenp = len = vap->va_size - inoff;
+			}
 		} else
 			error = 0;
 	}
 
 	/*
+	 * For cloning, the offsets must be clone blksize aligned and
+	 * the len must be blksize aligned unless it goes to EOF on
+	 * the input file.
+	 */
+	tryclone = false;
+	if (len > 0) {
+		if (error == 0 && NFSISSET_ATTRBIT(&np->n_vattr.na_suppattr,
+		    NFSATTRBIT_CLONEBLKSIZE) && nmp->nm_cloneblksize != 0 &&
+		    (inoff % nmp->nm_cloneblksize) == 0 &&
+		    (outoff % nmp->nm_cloneblksize) == 0 &&
+		    (toeof || (len % nmp->nm_cloneblksize) == 0))
+			tryclone = true;
+		else if (mustclone)
+			error = ENOSYS;
+	}
+
+	/*
 	 * len will be set to 0 upon a successful Copy RPC.
-	 * As such, this only loops when the Copy RPC needs to be retried.
+	 * As such, this only loops when the Copy/Clone RPC needs to be retried.
 	 */
 	while (len > 0 && error == 0) {
 		inattrflag = outattrflag = 0;
 		len2 = len;
-		if (tryoutcred)
-			error = nfsrpc_copy_file_range(invp, ap->a_inoffp,
-			    outvp, ap->a_outoffp, &len2, ap->a_flags,
-			    &inattrflag, &innfsva, &outattrflag, &outnfsva,
-			    ap->a_outcred, consecutive, &must_commit);
-		else
-			error = nfsrpc_copy_file_range(invp, ap->a_inoffp,
-			    outvp, ap->a_outoffp, &len2, ap->a_flags,
-			    &inattrflag, &innfsva, &outattrflag, &outnfsva,
-			    ap->a_incred, consecutive, &must_commit);
+		if (tryclone) {
+			if (tryoutcred)
+				error = nfsrpc_clone(invp, ap->a_inoffp, outvp,
+				    ap->a_outoffp, &len2, toeof, &inattrflag,
+				    &innfsva, &outattrflag, &outnfsva,
+				    ap->a_outcred);
+			else
+				error = nfsrpc_clone(invp, ap->a_inoffp, outvp,
+				    ap->a_outoffp, &len2, toeof, &inattrflag,
+				    &innfsva, &outattrflag, &outnfsva,
+				    ap->a_incred);
+		} else {
+			if (tryoutcred)
+				error = nfsrpc_copy_file_range(invp,
+				    ap->a_inoffp, outvp, ap->a_outoffp, &len2,
+				    ap->a_flags, &inattrflag, &innfsva,
+				    &outattrflag, &outnfsva,
+				    ap->a_outcred, consecutive, &must_commit);
+			else
+				error = nfsrpc_copy_file_range(invp,
+				    ap->a_inoffp, outvp, ap->a_outoffp, &len2,
+				    ap->a_flags, &inattrflag, &innfsva,
+				    &outattrflag, &outnfsva,
+				    ap->a_incred, consecutive, &must_commit);
+		}
 		if (inattrflag != 0)
 			ret = nfscl_loadattrcache(&invp, &innfsva, NULL, 0, 1);
 		if (outattrflag != 0)
@@ -4136,6 +4289,13 @@ relock:
 			/* Try again with incred. */
 			tryoutcred = false;
 			error = 0;
+		} else if (tryclone && error != 0) {
+			if (mustclone) {
+				error = ENOSYS;
+			} else {
+				tryclone = false;
+				error = 0;
+			}
 		}
 		if (error == NFSERR_STALEWRITEVERF) {
 			/*
@@ -4149,11 +4309,12 @@ relock:
 		}
 	}
 	VOP_UNLOCK(invp);
-	VOP_UNLOCK(outvp);
+	if (!onevp)
+		VOP_UNLOCK(outvp);	/* For onevp, same as invp. */
 	if (mp != NULL)
 		vn_finished_write(mp);
 	if (error == NFSERR_NOTSUPP || error == NFSERR_OFFLOADNOREQS ||
-	    error == NFSERR_ACCES) {
+	    error == NFSERR_ACCES || error == ENOSYS) {
 		/*
 		 * Unlike the NFSv4.2 Copy, vn_generic_copy_file_range() can
 		 * use a_incred for the read and a_outcred for the write, so
@@ -4161,7 +4322,7 @@ relock:
 		 * For NFSERR_NOTSUPP and NFSERR_OFFLOADNOREQS, the Copy can
 		 * never succeed, so disable it.
 		 */
-		if (error != NFSERR_ACCES) {
+		if (error != NFSERR_ACCES && error != ENOSYS) {
 			/* Can never do Copy on this mount. */
 			mtx_lock(&nmp->nm_mtx);
 			nmp->nm_privflag |= NFSMNTP_NOCOPY;
@@ -4502,6 +4663,7 @@ nfs_pathconf(struct vop_pathconf_args *ap)
 	struct nfsmount *nmp;
 	struct thread *td = curthread;
 	off_t off;
+	uint32_t clone_blksize;
 	bool eof, has_namedattr, named_enabled;
 	int attrflag, error;
 	struct nfsnode *np;
@@ -4510,19 +4672,22 @@ nfs_pathconf(struct vop_pathconf_args *ap)
 	np = VTONFS(vp);
 	named_enabled = false;
 	has_namedattr = false;
+	clone_blksize = 0;
 	if ((NFS_ISV34(vp) && (ap->a_name == _PC_LINK_MAX ||
 	    ap->a_name == _PC_NAME_MAX || ap->a_name == _PC_CHOWN_RESTRICTED ||
 	    ap->a_name == _PC_NO_TRUNC)) ||
 	    (NFS_ISV4(vp) && (ap->a_name == _PC_ACL_NFS4 ||
-	     ap->a_name == _PC_HAS_NAMEDATTR))) {
+	     ap->a_name == _PC_HAS_NAMEDATTR ||
+	     ap->a_name == _PC_CLONE_BLKSIZE))) {
 		/*
 		 * Since only the above 4 a_names are returned by the NFSv3
 		 * Pathconf RPC, there is no point in doing it for others.
 		 * For NFSv4, the Pathconf RPC (actually a Getattr Op.) can
-		 * be used for _PC_ACL_NFS4 and _PC_HAS_NAMEDATTR as well.
+		 * be used for _PC_ACL_NFS4, _PC_HAS_NAMEDATTR and
+		 * _PC_CLONE_BLKSIZE as well.
 		 */
-		error = nfsrpc_pathconf(vp, &pc, &has_namedattr, td->td_ucred,
-		    td, &nfsva, &attrflag);
+		error = nfsrpc_pathconf(vp, &pc, &has_namedattr, &clone_blksize,
+		    td->td_ucred, td, &nfsva, &attrflag);
 		if (attrflag != 0)
 			(void) nfscl_loadattrcache(&vp, &nfsva, NULL, 0, 1);
 		if (error != 0)
@@ -4667,6 +4832,18 @@ nfs_pathconf(struct vop_pathconf_args *ap)
 			*ap->a_retval = 1;
 		else
 			*ap->a_retval = 0;
+		break;
+	case _PC_HAS_HIDDENSYSTEM:
+		if (NFS_ISV4(vp) && NFSISSET_ATTRBIT(&np->n_vattr.na_suppattr,
+		    NFSATTRBIT_HIDDEN) &&
+		    NFSISSET_ATTRBIT(&np->n_vattr.na_suppattr,
+		    NFSATTRBIT_SYSTEM))
+			*ap->a_retval = 1;
+		else
+			*ap->a_retval = 0;
+		break;
+	case _PC_CLONE_BLKSIZE:
+		*ap->a_retval = clone_blksize;
 		break;
 
 	default:

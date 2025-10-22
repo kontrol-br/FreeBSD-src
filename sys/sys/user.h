@@ -265,6 +265,8 @@ struct user {
 #define	KF_TYPE_DEV	12
 #define	KF_TYPE_EVENTFD	13
 #define	KF_TYPE_TIMERFD	14
+#define	KF_TYPE_INOTIFY	15
+#define	KF_TYPE_JAILDESC	16
 #define	KF_TYPE_UNKNOWN	255
 
 #define	KF_VTYPE_VNON	0
@@ -452,10 +454,17 @@ struct kinfo_file {
 				uint64_t	kf_timerfd_addr;
 			} kf_timerfd;
 			struct {
+				int32_t		kf_jid;
+			} kf_jail;
+			struct {
 				uint64_t	kf_kqueue_addr;
 				int32_t		kf_kqueue_count;
 				int32_t		kf_kqueue_state;
 			} kf_kqueue;
+			struct {
+				uint64_t	kf_inotify_npending;
+				uint64_t	kf_inotify_nbpending;
+			} kf_inotify;
 		} kf_un;
 	};
 	uint16_t	kf_status;		/* Status flags. */
@@ -608,7 +617,8 @@ struct kinfo_vmobject {
 	} kvo_type_spec;			/* Type-specific union */
 	uint64_t kvo_me;			/* Uniq handle for anon obj */
 	uint64_t kvo_laundry;			/* Number of laundry pages. */
-	uint64_t _kvo_qspare[5];
+	uint64_t kvo_wired;			/* Number of wired pages. */
+	uint64_t _kvo_qspare[4];
 	uint32_t kvo_swapped;			/* Number of swapped pages */
 	uint32_t kvo_flags;
 	uint32_t _kvo_ispare[6];

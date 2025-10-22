@@ -29,10 +29,13 @@
 #include <sys/types.h>
 
 #include <net/if.h>
+#include <net/if_bridgevar.h> /* for ifbvlan_set_t */
 
 #include <netinet/in.h>
 #include <netinet/ip_carp.h>
 #include <netinet6/in6_var.h>
+
+#include <stdbool.h>
 
 #define ND6_IFF_DEFAULTIF    0x8000
 
@@ -64,9 +67,12 @@ struct lagg_reqport;
 struct ifconfig_bridge_status {
 	struct ifbropreq *params;	/**< current operational parameters */
 	struct ifbreq *members;		/**< list of bridge members */
+	ifbvlan_set_t *member_vlans;	/**< bridge member vlan sets */
 	size_t members_count;		/**< how many member interfaces */
 	uint32_t cache_size;		/**< size of address cache */
 	uint32_t cache_lifetime;	/**< address cache entry lifetime */
+	ifbr_flags_t flags;		/**< bridge flags */
+	ether_vlanid_t defpvid;		/**< default pvid */
 };
 
 struct ifconfig_capabilities {
@@ -167,7 +173,6 @@ int ifconfig_set_name(ifconfig_handle_t *h, const char *name,
     const char *newname);
 int ifconfig_get_orig_name(ifconfig_handle_t *h, const char *ifname,
     char **orig_name);
-int ifconfig_set_fib(ifconfig_handle_t *h, const char *name, int fib);
 int ifconfig_get_fib(ifconfig_handle_t *h, const char *name, int *fib);
 int ifconfig_set_mtu(ifconfig_handle_t *h, const char *name, const int mtu);
 int ifconfig_get_mtu(ifconfig_handle_t *h, const char *name, int *mtu);
@@ -378,3 +383,12 @@ int ifconfig_set_vlantag(ifconfig_handle_t *h, const char *name,
  * 		length of *lenp * IFNAMSIZ bytes.
  */
 int ifconfig_list_cloners(ifconfig_handle_t *h, char **bufp, size_t *lenp);
+
+/** Brings the interface up/down
+ * @param h	    An open ifconfig state object
+ * @param ifname    The interface name
+ * @param up	    true to bring the interface up, false to bring it down
+ * @return	    0 on success, nonzero on failure.
+ *		    On failure, the error info on the handle is set.
+ */
+int ifconfig_set_up(ifconfig_handle_t *h, const char *ifname, bool up);

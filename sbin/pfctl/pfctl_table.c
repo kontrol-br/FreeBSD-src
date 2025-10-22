@@ -55,15 +55,12 @@
 #include "pfctl.h"
 
 extern void	usage(void);
-static int	pfctl_table(int, char *[], char *, const char *, char *,
-		    const char *, int);
 static void	print_table(const struct pfr_table *, int, int);
 static int	print_tstats(const struct pfr_tstats *, int);
 static int	load_addr(struct pfr_buffer *, int, char *[], char *, int, int);
 static void	print_addrx(struct pfr_addr *, struct pfr_addr *, int);
 static int 	nonzero_astats(struct pfr_astats *);
 static void	print_astats(struct pfr_astats *, int);
-static void	radix_perror(void);
 static void	xprintf(int, const char *, ...);
 static void	print_iface(struct pfi_kif *, int);
 
@@ -77,26 +74,28 @@ static const char	*istats_text[2][2][2] = {
 	{ { "In6/Pass:", "In6/Block:" }, { "Out6/Pass:", "Out6/Block:" } }
 };
 
-#define RVTEST(fct) do {				\
-		if ((!(opts & PF_OPT_NOACTION) ||	\
-		    (opts & PF_OPT_DUMMYACTION)) &&	\
-		    (fct)) {				\
-			radix_perror();			\
-			goto _error;			\
-		}					\
+#define RVTEST(fct) do {						\
+		if ((!(opts & PF_OPT_NOACTION) ||			\
+		    (opts & PF_OPT_DUMMYACTION)) &&			\
+		    (fct)) {						\
+			if ((opts & PF_OPT_RECURSE) == 0)		\
+				warnx("%s", pf_strerror(errno));	\
+			goto _error;					\
+		}							\
 	} while (0)
 
 #define CREATE_TABLE do {						\
+		warn_duplicate_tables(table.pfrt_name,			\
+		    table.pfrt_anchor);					\
 		table.pfrt_flags |= PFR_TFLAG_PERSIST;			\
 		if ((!(opts & PF_OPT_NOACTION) ||			\
 		    (opts & PF_OPT_DUMMYACTION)) &&			\
 		    (pfr_add_table(&table, &nadd, flags)) &&		\
 		    (errno != EPERM)) {					\
-			radix_perror();					\
+			warnx("%s", pf_strerror(errno));		\
 			goto _error;					\
 		}							\
 		if (nadd) {						\
-			warn_namespace_collision(table.pfrt_name);	\
 			xprintf(opts, "%d table created", nadd);	\
 			if (opts & PF_OPT_NOACTION)			\
 				return (0);				\
@@ -104,11 +103,17 @@ static const char	*istats_text[2][2][2] = {
 		table.pfrt_flags &= ~PFR_TFLAG_PERSIST;			\
 	} while(0)
 
-void
+int
 pfctl_do_clear_tables(const char *anchor, int opts)
 {
-	if (pfctl_table(0, NULL, NULL, "-F", NULL, anchor, opts))
-		exit(1);
+	int	rv;
+
+	if ((rv = pfctl_table(0, NULL, NULL, "-F", NULL, anchor, opts)) == -1) {
+		if ((opts & PF_OPT_IGNFAIL) == 0)
+			exit(1);
+	}
+
+	return (rv);
 }
 
 void
@@ -116,15 +121,6 @@ pfctl_show_tables(const char *anchor, int opts)
 {
 	if (pfctl_table(0, NULL, NULL, "-s", NULL, anchor, opts))
 		exit(1);
-}
-
-int
-pfctl_command_tables(int argc, char *argv[], char *tname,
-    const char *command, char *file, const char *anchor, int opts)
-{
-	if (tname == NULL || command == NULL)
-		usage();
-	return pfctl_table(argc, argv, tname, command, file, anchor, opts);
 }
 
 int
@@ -214,7 +210,8 @@ pfctl_table(int argc, char *argv[], char *tname, const char *command,
 		xprintf(opts, "%d/%d addresses added", nadd, b.pfrb_size);
 		if (opts & PF_OPT_VERBOSE)
 			PFRB_FOREACH(a, &b)
-				if ((opts & PF_OPT_VERBOSE2) || a->pfra_fback)
+				if ((opts & PF_OPT_VERBOSE2) ||
+				    a->pfra_fback != PFR_FB_NONE)
 					print_addrx(a, NULL,
 					    opts & PF_OPT_USEDNS);
 	} else if (!strcmp(command, "delete")) {
@@ -228,7 +225,8 @@ pfctl_table(int argc, char *argv[], char *tname, const char *command,
 		xprintf(opts, "%d/%d addresses deleted", ndel, b.pfrb_size);
 		if (opts & PF_OPT_VERBOSE)
 			PFRB_FOREACH(a, &b)
-				if ((opts & PF_OPT_VERBOSE2) || a->pfra_fback)
+				if ((opts & PF_OPT_VERBOSE2) ||
+				    a->pfra_fback != PFR_FB_NONE)
 					print_addrx(a, NULL,
 					    opts & PF_OPT_USEDNS);
 	} else if (!strcmp(command, "replace")) {
@@ -259,7 +257,8 @@ pfctl_table(int argc, char *argv[], char *tname, const char *command,
 			xprintf(opts, "no changes");
 		if (opts & PF_OPT_VERBOSE)
 			PFRB_FOREACH(a, &b)
-				if ((opts & PF_OPT_VERBOSE2) || a->pfra_fback)
+				if ((opts & PF_OPT_VERBOSE2) ||
+				    a->pfra_fback != PFR_FB_NONE)
 					print_addrx(a, NULL,
 					    opts & PF_OPT_USEDNS);
 	} else if (!strcmp(command, "expire")) {
@@ -282,7 +281,7 @@ pfctl_table(int argc, char *argv[], char *tname, const char *command,
 				break;
 		}
 		PFRB_FOREACH(p, &b) {
-			((struct pfr_astats *)p)->pfras_a.pfra_fback = 0;
+			((struct pfr_astats *)p)->pfras_a.pfra_fback = PFR_FB_NONE;
 			if (time(NULL) - ((struct pfr_astats *)p)->pfras_tzero >
 			    lifetime)
 				if (pfr_buf_add(&b2,
@@ -297,7 +296,8 @@ pfctl_table(int argc, char *argv[], char *tname, const char *command,
 		xprintf(opts, "%d/%d addresses expired", ndel, b2.pfrb_size);
 		if (opts & PF_OPT_VERBOSE)
 			PFRB_FOREACH(a, &b2)
-				if ((opts & PF_OPT_VERBOSE2) || a->pfra_fback)
+				if ((opts & PF_OPT_VERBOSE2) ||
+				    a->pfra_fback != PFR_FB_NONE)
 					print_addrx(a, NULL,
 					    opts & PF_OPT_USEDNS);
 	} else if (!strcmp(command, "reset")) {
@@ -417,34 +417,39 @@ print_table(const struct pfr_table *ta, int verbose, int debug)
 {
 	if (!debug && !(ta->pfrt_flags & PFR_TFLAG_ACTIVE))
 		return;
-	if (verbose) {
-		printf("%c%c%c%c%c%c%c\t%s",
+	if (verbose)
+		printf("%c%c%c%c%c%c%c\t",
 		    (ta->pfrt_flags & PFR_TFLAG_CONST) ? 'c' : '-',
 		    (ta->pfrt_flags & PFR_TFLAG_PERSIST) ? 'p' : '-',
 		    (ta->pfrt_flags & PFR_TFLAG_ACTIVE) ? 'a' : '-',
 		    (ta->pfrt_flags & PFR_TFLAG_INACTIVE) ? 'i' : '-',
 		    (ta->pfrt_flags & PFR_TFLAG_REFERENCED) ? 'r' : '-',
 		    (ta->pfrt_flags & PFR_TFLAG_REFDANCHOR) ? 'h' : '-',
-		    (ta->pfrt_flags & PFR_TFLAG_COUNTERS) ? 'C' : '-',
-		    ta->pfrt_name);
-		if (ta->pfrt_anchor[0])
-			printf("\t%s", ta->pfrt_anchor);
-		puts("");
-	} else
-		puts(ta->pfrt_name);
+		    (ta->pfrt_flags & PFR_TFLAG_COUNTERS) ? 'C' : '-');
+
+	printf("%s", ta->pfrt_name);
+	if (ta->pfrt_anchor[0] != '\0')
+		printf("@%s", ta->pfrt_anchor);
+
+	printf("\n");
 }
 
 int
 print_tstats(const struct pfr_tstats *ts, int debug)
 {
-	time_t	time = ts->pfrts_tzero;
-	int	dir, op;
+	time_t	 time = ts->pfrts_tzero;
+	int	 dir, op;
+	char	*ct;
 
 	if (!debug && !(ts->pfrts_flags & PFR_TFLAG_ACTIVE))
 		return (0);
+	ct = ctime(&time);
 	print_table(&ts->pfrts_t, 1, debug);
 	printf("\tAddresses:   %d\n", ts->pfrts_cnt);
-	printf("\tCleared:     %s", ctime(&time));
+	if (ct)
+		printf("\tCleared:     %s", ct);
+	else
+		printf("\tCleared:     %lld\n", (long long)time);
 	printf("\tReferences:  [ Anchors: %-18d Rules: %-18d ]\n",
 	    ts->pfrts_refcnt[PFR_REFCNT_ANCHOR],
 	    ts->pfrts_refcnt[PFR_REFCNT_RULE]);
@@ -543,12 +548,17 @@ nonzero_astats(struct pfr_astats *as)
 void
 print_astats(struct pfr_astats *as, int dns)
 {
-	time_t	time = as->pfras_tzero;
-	int	dir, op;
+	time_t	 time = as->pfras_tzero;
+	int	 dir, op;
+	char	*ct;
 
+	ct = ctime(&time);
 	print_addrx(&as->pfras_a, NULL, dns);
-	printf("\tCleared:     %s", ctime(&time));
- 	if (as->pfras_a.pfra_fback == PFR_FB_NOCOUNT)
+	if (ct)
+		printf("\tCleared:     %s", ct);
+	else
+		printf("\tCleared:     %lld\n", (long long)time);
+	if (as->pfras_a.pfra_fback == PFR_FB_NOCOUNT)
 		return;
 	for (dir = 0; dir < PFR_DIR_MAX; dir++)
 		for (op = 0; op < PFR_OP_ADDR_MAX; op++)
@@ -558,37 +568,59 @@ print_astats(struct pfr_astats *as, int dns)
 			    (unsigned long long)as->pfras_bytes[dir][op]);
 }
 
-void
-radix_perror(void)
-{
-	extern char *__progname;
-	fprintf(stderr, "%s: %s.\n", __progname, pfr_strerror(errno));
-}
-
 int
 pfctl_define_table(char *name, int flags, int addrs, const char *anchor,
-    struct pfr_buffer *ab, u_int32_t ticket)
+    struct pfr_buffer *ab, u_int32_t ticket, struct pfr_uktable *ukt)
 {
-	struct pfr_table tbl;
+	struct pfr_table tbl_buf;
+	struct pfr_table *tbl;
 
-	bzero(&tbl, sizeof(tbl));
-	if (strlcpy(tbl.pfrt_name, name, sizeof(tbl.pfrt_name)) >=
-	    sizeof(tbl.pfrt_name) || strlcpy(tbl.pfrt_anchor, anchor,
-	    sizeof(tbl.pfrt_anchor)) >= sizeof(tbl.pfrt_anchor))
-		errx(1, "pfctl_define_table: strlcpy");
-	tbl.pfrt_flags = flags;
+	if (ukt == NULL) {
+		bzero(&tbl_buf, sizeof(tbl_buf));
+		tbl = &tbl_buf;
+	} else {
+		if (ab->pfrb_size != 0) {
+			/*
+			 * copy IP addresses which come with table from
+			 * temporal buffer to buffer attached to table.
+			 */
+			ukt->pfrukt_addrs = *ab;
+			ab->pfrb_size = 0;
+			ab->pfrb_msize = 0;
+			ab->pfrb_caddr = NULL;
+		} else
+			memset(&ukt->pfrukt_addrs, 0,
+			    sizeof(struct pfr_buffer));
 
-	return pfr_ina_define(&tbl, ab->pfrb_caddr, ab->pfrb_size, NULL,
-	    NULL, ticket, addrs ? PFR_FLAG_ADDRSTOO : 0);
+		tbl = &ukt->pfrukt_t;
+	}
+
+	if (strlcpy(tbl->pfrt_name, name, sizeof(tbl->pfrt_name)) >=
+	    sizeof(tbl->pfrt_name) ||
+	    strlcpy(tbl->pfrt_anchor, anchor, sizeof(tbl->pfrt_anchor)) >=
+	    sizeof(tbl->pfrt_anchor))
+		errx(1, "%s: strlcpy", __func__);
+	tbl->pfrt_flags = flags;
+	DBGPRINT("%s %s@%s [%x]\n", __func__, tbl->pfrt_name, tbl->pfrt_anchor,
+	    tbl->pfrt_flags);
+
+	/*
+	 * non-root anchors processed by parse.y are loaded to kernel later.
+	 * Here we load tables, which are either created for root anchor
+	 * or by 'pfctl -t ... -T ...' command.
+	 */
+	if (ukt != NULL)
+		return (0);
+
+	return (pfr_ina_define(tbl, ab->pfrb_caddr, ab->pfrb_size, NULL, NULL,
+	    ticket, addrs ? PFR_FLAG_ADDRSTOO : 0));
 }
 
 void
-warn_namespace_collision(const char *filter)
+warn_duplicate_tables(const char *tablename, const char *anchorname)
 {
 	struct pfr_buffer b;
 	struct pfr_table *t;
-	const char *name = NULL, *lastcoll;
-	int coll = 0;
 
 	bzero(&b, sizeof(b));
 	b.pfrb_type = PFRB_TABLES;
@@ -604,22 +636,13 @@ warn_namespace_collision(const char *filter)
 	PFRB_FOREACH(t, &b) {
 		if (!(t->pfrt_flags & PFR_TFLAG_ACTIVE))
 			continue;
-		if (filter != NULL && strcmp(filter, t->pfrt_name))
+		if (!strcmp(anchorname, t->pfrt_anchor))
 			continue;
-		if (!t->pfrt_anchor[0])
-			name = t->pfrt_name;
-		else if (name != NULL && !strcmp(name, t->pfrt_name)) {
-			coll++;
-			lastcoll = name;
-			name = NULL;
-		}
+		if (!strcmp(tablename, t->pfrt_name))
+			warnx("warning: table <%s> already defined"
+			    " in anchor \"%s\"", tablename,
+			    t->pfrt_anchor[0] ? t->pfrt_anchor : "/");
 	}
-	if (coll == 1)
-		warnx("warning: namespace collision with <%s> global table.",
-		    lastcoll);
-	else if (coll > 1)
-		warnx("warning: namespace collisions with %d global tables.",
-		    coll);
 	pfr_buf_clear(&b);
 }
 
@@ -657,10 +680,8 @@ pfctl_show_ifaces(const char *filter, int opts)
 	for (;;) {
 		pfr_buf_grow(&b, b.pfrb_size);
 		b.pfrb_size = b.pfrb_msize;
-		if (pfi_get_ifaces(filter, b.pfrb_caddr, &b.pfrb_size)) {
-			radix_perror();
-			exit(1);
-		}
+		if (pfi_get_ifaces(filter, b.pfrb_caddr, &b.pfrb_size))
+			errx(1, "%s", pf_strerror(errno));
 		if (b.pfrb_size <= b.pfrb_msize)
 			break;
 	}
@@ -673,8 +694,9 @@ pfctl_show_ifaces(const char *filter, int opts)
 void
 print_iface(struct pfi_kif *p, int opts)
 {
-	time_t	tzero = p->pfik_tzero;
-	int	i, af, dir, act;
+	time_t	 tzero = p->pfik_tzero;
+	int	 i, af, dir, act;
+	char	*ct;
 
 	printf("%s", p->pfik_name);
 	if (opts & PF_OPT_VERBOSE) {
@@ -685,7 +707,11 @@ print_iface(struct pfi_kif *p, int opts)
 
 	if (!(opts & PF_OPT_VERBOSE2))
 		return;
-	printf("\tCleared:     %s", ctime(&tzero));
+	ct = ctime(&tzero);
+	if (ct)
+		printf("\tCleared:     %s", ct);
+	else
+		printf("\tCleared:     %lld\n", (long long)tzero);
 	printf("\tReferences:  %-18d\n", p->pfik_rulerefs);
 	for (i = 0; i < 8; i++) {
 		af = (i>>2) & 1;

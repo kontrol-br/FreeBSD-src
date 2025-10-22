@@ -102,18 +102,20 @@ void metaslab_trace_move(zio_alloc_list_t *, zio_alloc_list_t *);
 void metaslab_trace_init(zio_alloc_list_t *);
 void metaslab_trace_fini(zio_alloc_list_t *);
 
-metaslab_class_t *metaslab_class_create(spa_t *, const metaslab_ops_t *,
-    boolean_t);
+metaslab_class_t *metaslab_class_create(spa_t *, const char *,
+    const metaslab_ops_t *, boolean_t);
 void metaslab_class_destroy(metaslab_class_t *);
 void metaslab_class_validate(metaslab_class_t *);
 void metaslab_class_balance(metaslab_class_t *mc, boolean_t onsync);
 void metaslab_class_histogram_verify(metaslab_class_t *);
 uint64_t metaslab_class_fragmentation(metaslab_class_t *);
 uint64_t metaslab_class_expandable_space(metaslab_class_t *);
-boolean_t metaslab_class_throttle_reserve(metaslab_class_t *, int, zio_t *,
-    boolean_t, boolean_t *);
-boolean_t metaslab_class_throttle_unreserve(metaslab_class_t *, int, zio_t *);
+boolean_t metaslab_class_throttle_reserve(metaslab_class_t *, int, int,
+    uint64_t, boolean_t, boolean_t *);
+boolean_t metaslab_class_throttle_unreserve(metaslab_class_t *, int, int,
+    uint64_t);
 void metaslab_class_evict_old(metaslab_class_t *, uint64_t);
+const char *metaslab_class_get_name(metaslab_class_t *);
 uint64_t metaslab_class_get_alloc(metaslab_class_t *);
 uint64_t metaslab_class_get_space(metaslab_class_t *);
 uint64_t metaslab_class_get_dspace(metaslab_class_t *);

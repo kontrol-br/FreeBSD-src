@@ -32,8 +32,8 @@
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
+#include <sys/stdarg.h>
 #include <sys/sysctl.h>
-#include <machine/stdarg.h>
 
 #ifndef __KERNEL__
 #define __KERNEL__
@@ -107,7 +107,7 @@ hpt_set_asc_info(IAL_ADAPTER_T *pAdapter, char *buffer,int length)
 				return -EINVAL;
 			}
 
-            for (i=0;i<MV_SATA_CHANNELS_NUM;i++)
+            for (i = 0; i < MV_SATA_CHANNELS_NUM; i++)
 				if(i == ichan)
 				    goto rebuild;
 

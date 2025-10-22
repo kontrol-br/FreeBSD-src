@@ -218,19 +218,32 @@ static const struct cpu_parts cpu_parts_arm[] = {
 	{ CPU_PART_CORTEX_A76AE, "Cortex-A76AE" },
 	{ CPU_PART_CORTEX_A77, "Cortex-A77" },
 	{ CPU_PART_CORTEX_A78, "Cortex-A78" },
+	{ CPU_PART_CORTEX_A78AE, "Cortex-A78AE" },
 	{ CPU_PART_CORTEX_A78C, "Cortex-A78C" },
 	{ CPU_PART_CORTEX_A510, "Cortex-A510" },
+	{ CPU_PART_CORTEX_A520, "Cortex-A520" },
 	{ CPU_PART_CORTEX_A710, "Cortex-A710" },
 	{ CPU_PART_CORTEX_A715, "Cortex-A715" },
+	{ CPU_PART_CORTEX_A720, "Cortex-A720" },
+	{ CPU_PART_CORTEX_A725, "Cortex-A725" },
+	{ CPU_PART_CORTEX_X925, "Cortex-A925" },
 	{ CPU_PART_CORTEX_X1, "Cortex-X1" },
 	{ CPU_PART_CORTEX_X1C, "Cortex-X1C" },
 	{ CPU_PART_CORTEX_X2, "Cortex-X2" },
 	{ CPU_PART_CORTEX_X3, "Cortex-X3" },
+	{ CPU_PART_CORTEX_X4, "Cortex-X4" },
+	{ CPU_PART_C1_NANO, "C1-Nano" },
+	{ CPU_PART_C1_PRO, "C1-Pro" },
+	{ CPU_PART_C1_PREMIUM, "C1-Premium" },
+	{ CPU_PART_C1_ULTRA, "C1-Ultra" },
 	{ CPU_PART_NEOVERSE_E1, "Neoverse-E1" },
 	{ CPU_PART_NEOVERSE_N1, "Neoverse-N1" },
 	{ CPU_PART_NEOVERSE_N2, "Neoverse-N2" },
+	{ CPU_PART_NEOVERSE_N3, "Neoverse-N3" },
 	{ CPU_PART_NEOVERSE_V1, "Neoverse-V1" },
 	{ CPU_PART_NEOVERSE_V2, "Neoverse-V2" },
+	{ CPU_PART_NEOVERSE_V3, "Neoverse-V3" },
+	{ CPU_PART_NEOVERSE_V3AE, "Neoverse-V3AE" },
 	CPU_PART_NONE,
 };
 
@@ -241,9 +254,22 @@ static const struct cpu_parts cpu_parts_cavium[] = {
 	CPU_PART_NONE,
 };
 
-/* APM / Ampere */
+/* APM (now Ampere) */
 static const struct cpu_parts cpu_parts_apm[] = {
 	{ CPU_PART_EMAG8180, "eMAG 8180" },
+	CPU_PART_NONE,
+};
+
+/* Ampere */
+static const struct cpu_parts cpu_parts_ampere[] = {
+	{ CPU_PART_AMPERE1, "AmpereOne AC03" },
+	{ CPU_PART_AMPERE1A, "AmpereOne AC04" },
+	CPU_PART_NONE,
+};
+
+/* Microsoft */
+static const struct cpu_parts cpu_parts_microsoft[] = {
+	{ CPU_PART_AZURE_COBALT_100, "Azure Cobalt 100" },
 	CPU_PART_NONE,
 };
 
@@ -280,7 +306,7 @@ static const struct cpu_parts cpu_parts_none[] = {
  * Implementers table.
  */
 const struct cpu_implementers cpu_implementers[] = {
-	{ CPU_IMPL_AMPERE,	"Ampere",	cpu_parts_none },
+	{ CPU_IMPL_AMPERE,	"Ampere",	cpu_parts_ampere },
 	{ CPU_IMPL_APPLE,	"Apple",	cpu_parts_apple },
 	{ CPU_IMPL_APM,		"APM",		cpu_parts_apm },
 	{ CPU_IMPL_ARM,		"ARM",		cpu_parts_arm },
@@ -289,9 +315,11 @@ const struct cpu_implementers cpu_implementers[] = {
 	{ CPU_IMPL_DEC,		"DEC",		cpu_parts_none },
 	{ CPU_IMPL_FREESCALE,	"Freescale",	cpu_parts_none },
 	{ CPU_IMPL_FUJITSU,	"Fujitsu",	cpu_parts_none },
+	{ CPU_IMPL_HISILICON,	"HiSilicon",	cpu_parts_none },
 	{ CPU_IMPL_INFINEON,	"IFX",		cpu_parts_none },
 	{ CPU_IMPL_INTEL,	"Intel",	cpu_parts_none },
 	{ CPU_IMPL_MARVELL,	"Marvell",	cpu_parts_none },
+	{ CPU_IMPL_MICROSOFT,	"Microsoft",	cpu_parts_microsoft },
 	{ CPU_IMPL_NVIDIA,	"NVIDIA",	cpu_parts_none },
 	{ CPU_IMPL_QUALCOMM,	"Qualcomm",	cpu_parts_qcom },
 	CPU_IMPLEMENTER_NONE,
@@ -594,7 +622,7 @@ static const struct mrs_field id_aa64dfr0_fields[] = {
 	    id_aa64dfr0_tracebuffer),
 	MRS_FIELD(ID_AA64DFR0, TraceFilt, false, MRS_LOWER, 0,
 	    id_aa64dfr0_tracefilt),
-	MRS_FIELD(ID_AA64DFR0, DoubleLock, false, MRS_LOWER, 0,
+	MRS_FIELD(ID_AA64DFR0, DoubleLock, true, MRS_LOWER, 0,
 	    id_aa64dfr0_doublelock),
 	MRS_FIELD(ID_AA64DFR0, PMSVer, false, MRS_LOWER, 0, id_aa64dfr0_pmsver),
 	MRS_FIELD(ID_AA64DFR0, CTX_CMPs, false, MRS_LOWER, 0,
@@ -604,7 +632,7 @@ static const struct mrs_field id_aa64dfr0_fields[] = {
 	MRS_FIELD(ID_AA64DFR0, PMSS, false, MRS_LOWER, 0, id_aa64dfr0_pmss),
 	MRS_FIELD(ID_AA64DFR0, BRPs, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64dfr0_brps),
-	MRS_FIELD(ID_AA64DFR0, PMUVer, false, MRS_LOWER, 0, id_aa64dfr0_pmuver),
+	MRS_FIELD(ID_AA64DFR0, PMUVer, true, MRS_LOWER, 0, id_aa64dfr0_pmuver),
 	MRS_FIELD(ID_AA64DFR0, TraceVer, false, MRS_LOWER, 0,
 	    id_aa64dfr0_tracever),
 	MRS_FIELD(ID_AA64DFR0, DebugVer, false, MRS_LOWER | MRS_SAFE(0x6), 0,
@@ -1005,9 +1033,9 @@ static const struct mrs_field id_aa64isar1_fields[] = {
 	    id_aa64isar1_sb, id_aa64isar1_sb_caps),
 	MRS_FIELD_HWCAP(ID_AA64ISAR1, FRINTTS, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar1_frintts, id_aa64isar1_frintts_caps),
-	MRS_FIELD_HWCAP(ID_AA64ISAR1, GPI, false, MRS_LOWER, 0,
+	MRS_FIELD_HWCAP(ID_AA64ISAR1, GPI, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar1_gpi, id_aa64isar1_gpi_caps),
-	MRS_FIELD_HWCAP(ID_AA64ISAR1, GPA, false, MRS_LOWER, 0,
+	MRS_FIELD_HWCAP(ID_AA64ISAR1, GPA, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar1_gpa, id_aa64isar1_gpa_caps),
 	MRS_FIELD_HWCAP(ID_AA64ISAR1, LRCPC, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar1_lrcpc, id_aa64isar1_lrcpc_caps),
@@ -1015,9 +1043,9 @@ static const struct mrs_field id_aa64isar1_fields[] = {
 	    id_aa64isar1_fcma, id_aa64isar1_fcma_caps),
 	MRS_FIELD_HWCAP(ID_AA64ISAR1, JSCVT, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar1_jscvt, id_aa64isar1_jscvt_caps),
-	MRS_FIELD_HWCAP(ID_AA64ISAR1, API, false, MRS_LOWER, 0,
+	MRS_FIELD_HWCAP(ID_AA64ISAR1, API, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar1_api, id_aa64isar1_api_caps),
-	MRS_FIELD_HWCAP(ID_AA64ISAR1, APA, false, MRS_LOWER, 0,
+	MRS_FIELD_HWCAP(ID_AA64ISAR1, APA, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar1_apa, id_aa64isar1_apa_caps),
 	MRS_FIELD_HWCAP(ID_AA64ISAR1, DPB, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar1_dpb, id_aa64isar1_dpb_caps),
@@ -1122,9 +1150,9 @@ static const struct mrs_field id_aa64isar2_fields[] = {
 	    id_aa64isar2_pac_frac),
 	MRS_FIELD(ID_AA64ISAR2, BC, false, MRS_LOWER, 0, id_aa64isar2_bc),
 	MRS_FIELD(ID_AA64ISAR2, MOPS, false, MRS_LOWER, 0, id_aa64isar2_mops),
-	MRS_FIELD_HWCAP(ID_AA64ISAR2, APA3, false, MRS_LOWER, 0,
+	MRS_FIELD_HWCAP(ID_AA64ISAR2, APA3, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar2_apa3, id_aa64isar2_apa3_caps),
-	MRS_FIELD_HWCAP(ID_AA64ISAR2, GPA3, false, MRS_LOWER, 0,
+	MRS_FIELD_HWCAP(ID_AA64ISAR2, GPA3, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar2_gpa3, id_aa64isar2_gpa3_caps),
 	MRS_FIELD_HWCAP(ID_AA64ISAR2, RPRES, false, MRS_LOWER, MRS_USERSPACE,
 	    id_aa64isar2_rpres, id_aa64isar2_rpres_caps),
@@ -1137,7 +1165,7 @@ static const struct mrs_field id_aa64isar2_fields[] = {
 /* ID_AA64MMFR0_EL1 */
 static const struct mrs_field_value id_aa64mmfr0_ecv[] = {
 	MRS_FIELD_VALUE_NONE_IMPL(ID_AA64MMFR0, ECV, NONE, IMPL),
-	MRS_FIELD_VALUE(ID_AA64MMFR0_ECV_CNTHCTL, "ECV+CNTHCTL"),
+	MRS_FIELD_VALUE(ID_AA64MMFR0_ECV_POFF, "ECV POFF"),
 	MRS_FIELD_VALUE_END,
 };
 
@@ -1235,9 +1263,9 @@ static const struct mrs_field id_aa64mmfr0_fields[] = {
 	    id_aa64mmfr0_tgran64_2),
 	MRS_FIELD(ID_AA64MMFR0, TGran16_2, false, MRS_LOWER, 0,
 	    id_aa64mmfr0_tgran16_2),
-	MRS_FIELD(ID_AA64MMFR0, TGran4, false, MRS_LOWER, 0,
+	MRS_FIELD(ID_AA64MMFR0, TGran4, true, MRS_LOWER, 0,
 	    id_aa64mmfr0_tgran4),
-	MRS_FIELD(ID_AA64MMFR0, TGran64, false, MRS_LOWER, 0,
+	MRS_FIELD(ID_AA64MMFR0, TGran64, true, MRS_LOWER, 0,
 	    id_aa64mmfr0_tgran64),
 	MRS_FIELD(ID_AA64MMFR0, TGran16, false, MRS_LOWER, 0,
 	    id_aa64mmfr0_tgran16),
@@ -1832,7 +1860,8 @@ static const struct mrs_field id_aa64pfr1_fields[] = {
 	MRS_FIELD(ID_AA64PFR1, DF2, false, MRS_LOWER, 0, id_aa64pfr1_df2),
 	MRS_FIELD(ID_AA64PFR1, MTEX, false, MRS_LOWER, 0, id_aa64pfr1_mtex),
 	MRS_FIELD(ID_AA64PFR1, THE, false, MRS_LOWER, 0, id_aa64pfr1_the),
-	MRS_FIELD(ID_AA64PFR1, MTE_frac, false, MRS_LOWER, 0, id_aa64pfr1_mtefrac),
+	MRS_FIELD(ID_AA64PFR1, MTE_frac, true, MRS_LOWER, 0,
+	    id_aa64pfr1_mtefrac),
 	MRS_FIELD(ID_AA64PFR1, NMI, false, MRS_LOWER, 0, id_aa64pfr1_nmi),
 	MRS_FIELD(ID_AA64PFR1, CSV2_frac, false, MRS_LOWER, 0,
 	    id_aa64pfr1_csv2_frac),
@@ -2195,7 +2224,6 @@ static const struct mrs_field mvfr1_fields[] = {
 #endif /* COMPAT_FREEBSD32 */
 
 struct mrs_user_reg {
-	u_int		reg;
 	u_int		iss;
 	bool		is64bit;
 	size_t		offset;
@@ -2204,7 +2232,6 @@ struct mrs_user_reg {
 
 #define	USER_REG(name, field_name, _is64bit)				\
 	{								\
-		.reg = name,						\
 		.iss = name##_ISS,					\
 		.offset = __offsetof(struct cpu_desc, field_name),	\
 		.fields = field_name##_fields,				\
@@ -2249,37 +2276,25 @@ static const struct mrs_user_reg user_regs[] = {
 static bool
 user_ctr_has_neoverse_n1_1542419(uint32_t midr, uint64_t ctr)
 {
-	/* Skip non-Neoverse-N1 */
-	if (!CPU_MATCH(CPU_IMPL_MASK | CPU_PART_MASK, CPU_IMPL_ARM,
-	    CPU_PART_NEOVERSE_N1, 0, 0))
-		return (false);
-
-	switch (CPU_VAR(midr)) {
-	default:
-		break;
-	case 4:
-		/* Fixed in r4p1 */
-		if (CPU_REV(midr) > 0)
-			break;
-		/* FALLTHROUGH */
-	case 3:
-		/* If DIC is enabled (coherent icache) then we are affected */
-		return (CTR_DIC_VAL(ctr) != 0);
-	}
-
-	return (false);
+	/*
+	 * Neoverse-N1 erratum 1542419
+	 * Present in r3p0 - r4p0
+	 * Fixed in r4p1
+	 */
+	return (midr_check_var_part_range(midr, CPU_IMPL_ARM,
+	    CPU_PART_NEOVERSE_N1, 3, 0, 4, 0) && CTR_DIC_VAL(ctr) != 0);
 }
 
-static bool
-user_ctr_check(const struct cpu_feat *feat __unused, u_int midr __unused)
+static cpu_feat_en
+user_ctr_check(const struct cpu_feat *feat __unused, u_int midr)
 {
 	if (emulate_ctr)
-		return (true);
+		return (FEAT_DEFAULT_ENABLE);
 
 	if (user_ctr_has_neoverse_n1_1542419(midr, READ_SPECIALREG(ctr_el0)))
-		return (true);
+		return (FEAT_DEFAULT_ENABLE);
 
-	return (false);
+	return (FEAT_ALWAYS_DISABLE);
 }
 
 static bool
@@ -2297,7 +2312,7 @@ user_ctr_has_errata(const struct cpu_feat *feat __unused, u_int midr,
 	return (false);
 }
 
-static void
+static bool
 user_ctr_enable(const struct cpu_feat *feat __unused,
     cpu_feat_errata errata_status, u_int *errata_list, u_int errata_count)
 {
@@ -2333,16 +2348,13 @@ user_ctr_enable(const struct cpu_feat *feat __unused,
 	WRITE_SPECIALREG(sctlr_el1,
 	    READ_SPECIALREG(sctlr_el1) & ~SCTLR_UCT);
 	isb();
+
+	return (true);
 }
 
-static struct cpu_feat user_ctr = {
-	.feat_name		= "Trap CTR_EL0",
-	.feat_check		= user_ctr_check,
-	.feat_has_errata	= user_ctr_has_errata,
-	.feat_enable		= user_ctr_enable,
-	.feat_flags		= CPU_FEAT_AFTER_DEV | CPU_FEAT_PER_CPU,
-};
-DATA_SET(cpu_feat_set, user_ctr);
+CPU_FEAT(trap_ctr, "Trap CTR_EL0",
+    user_ctr_check, user_ctr_has_errata, user_ctr_enable, NULL,
+    CPU_FEAT_AFTER_DEV | CPU_FEAT_PER_CPU);
 
 static bool
 user_ctr_handler(uint64_t esr, struct trapframe *frame)
@@ -2497,29 +2509,12 @@ mrs_field_cmp(uint64_t a, uint64_t b, u_int shift, int width, bool sign)
 }
 
 bool
-extract_user_id_field(u_int reg, u_int field_shift, uint8_t *val)
-{
-	uint64_t value;
-	int i;
-
-	for (i = 0; i < nitems(user_regs); i++) {
-		if (user_regs[i].reg == reg) {
-			value = CPU_DESC_FIELD(user_cpu_desc, i);
-			*val = value >> field_shift;
-			return (true);
-		}
-	}
-
-	return (false);
-}
-
-bool
-get_kernel_reg(u_int reg, uint64_t *val)
+get_kernel_reg_iss(u_int iss, uint64_t *val)
 {
 	int i;
 
 	for (i = 0; i < nitems(user_regs); i++) {
-		if (user_regs[i].reg == reg) {
+		if (user_regs[i].iss == iss) {
 			*val = CPU_DESC_FIELD(kern_cpu_desc, i);
 			return (true);
 		}
@@ -2533,13 +2528,13 @@ get_kernel_reg(u_int reg, uint64_t *val)
  * do not exceed those in the mask.
  */
 bool
-get_kernel_reg_masked(u_int reg, uint64_t *valp, uint64_t mask)
+get_kernel_reg_iss_masked(u_int iss, uint64_t *valp, uint64_t mask)
 {
 	const struct mrs_field *fields;
 	uint64_t val;
 
 	for (int i = 0; i < nitems(user_regs); i++) {
-		if (user_regs[i].reg == reg) {
+		if (user_regs[i].iss == iss) {
 			val = CPU_DESC_FIELD(kern_cpu_desc, i);
 			fields = user_regs[i].fields;
 			for (int j = 0; fields[j].type != 0; j++) {
@@ -2548,6 +2543,24 @@ get_kernel_reg_masked(u_int reg, uint64_t *valp, uint64_t mask)
 				    fields[j].shift, fields[j].sign);
 			}
 			*valp = mask;
+			return (true);
+		}
+	}
+
+	return (false);
+}
+
+bool
+get_user_reg_iss(u_int iss, uint64_t *val, bool fbsd)
+{
+	int i;
+
+	for (i = 0; i < nitems(user_regs); i++) {
+		if (user_regs[i].iss == iss) {
+			if (fbsd)
+				*val = CPU_DESC_FIELD(user_cpu_desc, i);
+			else
+				*val = CPU_DESC_FIELD(l_user_cpu_desc, i);
 			return (true);
 		}
 	}
@@ -2693,7 +2706,7 @@ update_special_regs(u_int cpu)
  * HWCAPs are set the check for these is enough.
  */
 void
-update_special_reg(u_int reg, uint64_t clear, uint64_t set)
+update_special_reg_iss(u_int iss, uint64_t clear, uint64_t set)
 {
 	MPASS(hwcaps_set == false);
 	/* There is no locking here, so we only support changing this on CPU0 */
@@ -2701,7 +2714,7 @@ update_special_reg(u_int reg, uint64_t clear, uint64_t set)
 	MPASS(PCPU_GET(cpuid) == 0);
 
 	for (int i = 0; i < nitems(user_regs); i++) {
-		if (user_regs[i].reg != reg)
+		if (user_regs[i].iss != iss)
 			continue;
 
 		clear_set_special_reg_idx(i, clear, set);

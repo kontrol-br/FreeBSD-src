@@ -375,6 +375,11 @@ ATF_TC_BODY(concurrent_add, tc)
 
 		usleep(20000);
 	}
+
+	for (size_t j = nitems(threads); j > 0; j--) {
+		ATF_REQUIRE(pthread_cancel(threads[j - 1]) == 0);
+		ATF_REQUIRE(pthread_join(threads[j - 1], NULL) == 0);
+	}
 }
 
 /*
@@ -505,6 +510,11 @@ ATF_TC_BODY(connect_not_bound, tc)
 	ATF_REQUIRE_MSG(rv == -1 && errno == EOPNOTSUPP,
 	    "Expected EOPNOTSUPP on connect(2) not met. Got %d, errno %d",
 	    rv, errno);
+	rv = sendto(s, "test", 4, 0, (struct sockaddr *)&sin,
+	    sizeof(sin));
+	ATF_REQUIRE_MSG(rv == -1 && errno == EOPNOTSUPP,
+	    "Expected EOPNOTSUPP on sendto(2) not met. Got %d, errno %d",
+	    rv, errno);
 
 	close(p);
 	close(s);
@@ -535,6 +545,11 @@ ATF_TC_BODY(connect_bound, tc)
 	rv = connect(s, (struct sockaddr *)&sin, sizeof(sin));
 	ATF_REQUIRE_MSG(rv == -1 && errno == EOPNOTSUPP,
 	    "Expected EOPNOTSUPP on connect(2) not met. Got %d, errno %d",
+	    rv, errno);
+	rv = sendto(s, "test", 4, 0, (struct sockaddr *)&sin,
+	    sizeof(sin));
+	ATF_REQUIRE_MSG(rv == -1 && errno == EOPNOTSUPP,
+	    "Expected EOPNOTSUPP on sendto(2) not met. Got %d, errno %d",
 	    rv, errno);
 
 	close(p);

@@ -1061,7 +1061,7 @@ devfs_lookupx(struct vop_lookup_args *ap, int *dm_unlock)
 	mp = dvp->v_mount;
 	dmp = VFSTODEVFS(mp);
 	dd = dvp->v_data;
-	*vpp = NULLVP;
+	*vpp = NULL;
 
 	if ((flags & ISLASTCN) && nameiop == RENAME)
 		return (EOPNOTSUPP);
@@ -1080,7 +1080,7 @@ devfs_lookupx(struct vop_lookup_args *ap, int *dm_unlock)
 		if ((flags & ISLASTCN) && nameiop != LOOKUP)
 			return (EINVAL);
 		*vpp = dvp;
-		VREF(dvp);
+		vref(dvp);
 		return (0);
 	}
 
@@ -1170,7 +1170,7 @@ devfs_lookupx(struct vop_lookup_args *ap, int *dm_unlock)
 		if (error)
 			return (error);
 		if (*vpp == dvp) {
-			VREF(dvp);
+			vref(dvp);
 			*vpp = dvp;
 			return (0);
 		}
@@ -1450,6 +1450,7 @@ devfs_readdir(struct vop_readdir_args *ap)
 	struct devfs_mount *dmp;
 	off_t off;
 	int *tmp_ncookies = NULL;
+	ssize_t startresid;
 
 	if (ap->a_vp->v_type != VDIR)
 		return (ENOTDIR);
@@ -1482,6 +1483,7 @@ devfs_readdir(struct vop_readdir_args *ap)
 	error = 0;
 	de = ap->a_vp->v_data;
 	off = 0;
+	startresid = uio->uio_resid;
 	TAILQ_FOREACH(dd, &de->de_dlist, de_list) {
 		KASSERT(dd->de_cdp != (void *)0xdeadc0de, ("%s %d\n", __func__, __LINE__));
 		if (dd->de_flags & (DE_COVERED | DE_WHITEOUT))
@@ -1494,8 +1496,13 @@ devfs_readdir(struct vop_readdir_args *ap)
 			de = dd;
 		dp = dd->de_dirent;
 		MPASS(dp->d_reclen == GENERIC_DIRSIZ(dp));
-		if (dp->d_reclen > uio->uio_resid)
+		if (dp->d_reclen > uio->uio_resid) {
+			/* Nothing was copied out, return EINVAL. */
+			if (uio->uio_resid == startresid)
+				error = EINVAL;
+			/* Otherwise stop. */
 			break;
+		}
 		dp->d_fileno = de->de_inode;
 		/* NOTE: d_off is the offset for the *next* entry. */
 		dp->d_off = off + dp->d_reclen;

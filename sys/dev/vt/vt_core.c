@@ -125,10 +125,10 @@ static const struct terminal_class vt_termclass = {
 			(vw)->vw_number)
 
 static SYSCTL_NODE(_kern, OID_AUTO, vt, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
-    "vt(9) parameters");
+    "vt(4) parameters");
 static VT_SYSCTL_INT(enable_altgr, 1, "Enable AltGr key (Do not assume R.Alt as Alt)");
 static VT_SYSCTL_INT(enable_bell, 0, "Enable bell");
-static VT_SYSCTL_INT(debug, 0, "vt(9) debug level");
+static VT_SYSCTL_INT(debug, 0, "vt(4) debug level");
 static VT_SYSCTL_INT(deadtimer, 15, "Time to wait busy process in VT_PROCESS mode");
 static VT_SYSCTL_INT(suspendswitch, 1, "Switch to VT0 before suspend");
 
@@ -195,8 +195,8 @@ static void vt_update_static(void *);
 #ifndef SC_NO_CUTPASTE
 static void vt_mouse_paste(void);
 #endif
-static void vt_suspend_handler(void *priv);
-static void vt_resume_handler(void *priv);
+static void vt_suspend_handler(void *priv, enum power_stype stype);
+static void vt_resume_handler(void *priv, enum power_stype stype);
 
 SET_DECLARE(vt_drv_set, struct vt_driver);
 
@@ -3330,7 +3330,7 @@ vt_replace_backend(const struct vt_driver *drv, void *softc)
 }
 
 static void
-vt_suspend_handler(void *priv)
+vt_suspend_handler(void *priv, enum power_stype stype)
 {
 	struct vt_device *vd;
 
@@ -3341,7 +3341,7 @@ vt_suspend_handler(void *priv)
 }
 
 static void
-vt_resume_handler(void *priv)
+vt_resume_handler(void *priv, enum power_stype stype)
 {
 	struct vt_device *vd;
 

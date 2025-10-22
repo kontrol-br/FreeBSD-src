@@ -29,7 +29,7 @@
 #include "opt_ktrace.h"
 #include "opt_posix.h"
 #include "opt_hwpmc_hooks.h"
-
+#include "opt_hwt_hooks.h"
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #ifdef KTRACE
@@ -59,6 +59,9 @@
 #include <sys/umtxvar.h>
 #ifdef	HWPMC_HOOKS
 #include <sys/pmckern.h>
+#endif
+#ifdef HWT_HOOKS
+#include <dev/hwt/hwt_hook.h>
 #endif
 
 #include <machine/frame.h>
@@ -280,6 +283,10 @@ thread_create(struct thread *td, struct rtprio *rtp,
 		PMC_CALL_HOOK_UNLOCKED(newtd, PMC_FN_THR_CREATE_LOG, NULL);
 #endif
 
+#ifdef HWT_HOOKS
+	HWT_CALL_HOOK(newtd, HWT_THREAD_CREATE, NULL);
+#endif
+
 	tidhash_add(newtd);
 
 	/* ignore timesharing class */
@@ -338,6 +345,17 @@ kern_thr_exit(struct thread *td)
 	struct proc *p;
 
 	p = td->td_proc;
+
+	/*
+	 * Clear kernel ASTs in advance of selecting the last exiting
+	 * thread and acquiring schedulers locks.  It is fine to
+	 * clear the ASTs here even if we are not going to exit after
+	 * all.  On the other hand, leaving them pending could trigger
+	 * execution in subsystems in a context where they are not
+	 * prepared to handle top kernel actions, even in execution of
+	 * an unrelated thread.
+	 */
+	ast_kclear(td);
 
 	/*
 	 * If all of the threads in a process call this routine to
@@ -612,6 +630,9 @@ sys_thr_set_name(struct thread *td, struct thr_set_name_args *uap)
 #ifdef HWPMC_HOOKS
 	if (PMC_PROC_IS_USING_PMCS(p) || PMC_SYSTEM_SAMPLING_ACTIVE())
 		PMC_CALL_HOOK_UNLOCKED(ttd, PMC_FN_THR_CREATE_LOG, NULL);
+#endif
+#ifdef HWT_HOOKS
+	HWT_CALL_HOOK(ttd, HWT_THREAD_SET_NAME, NULL);
 #endif
 #ifdef KTR
 	sched_clear_tdname(ttd);

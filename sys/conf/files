@@ -359,6 +359,7 @@ contrib/openzfs/module/zfs/zcp_synctask.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/zfeature.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/zfs_byteswap.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/zfs_chksum.c		optional zfs compile-with "${ZFS_C}"
+contrib/openzfs/module/zfs/zfs_crrd.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/zfs_fm.c		optional zfs compile-with "${ZFS_C} ${NO_WUNUSED_BUT_SET_VARIABLE}"
 contrib/openzfs/module/zfs/zfs_fuid.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/zfs_impl.c		optional zfs compile-with "${ZFS_C}"
@@ -598,42 +599,24 @@ contrib/dev/acpica/components/utilities/utxface.c	optional acpi
 contrib/dev/acpica/components/utilities/utxferror.c	optional acpi
 contrib/dev/acpica/components/utilities/utxfinit.c	optional acpi
 contrib/dev/acpica/os_specific/service_layers/osgendbg.c	optional acpi acpi_debug
-netpfil/ipfilter/netinet/fil.c	optional ipfilter inet \
-	compile-with "${NORMAL_C} ${NO_WSELF_ASSIGN} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_auth.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_fil_freebsd.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_frag.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_log.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_nat.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_proxy.c optional ipfilter inet \
-	compile-with "${NORMAL_C} ${NO_WSELF_ASSIGN} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_state.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_lookup.c optional ipfilter inet \
-	compile-with "${NORMAL_C} ${NO_WSELF_ASSIGN} -Wno-unused -Wno-error -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_pool.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_htable.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter ${NO_WTAUTOLOGICAL_POINTER_COMPARE}"
-netpfil/ipfilter/netinet/ip_sync.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/mlfk_ipl.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_nat6.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_rules.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_scan.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/ip_dstlist.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -Wno-unused -I$S/netpfil/ipfilter"
-netpfil/ipfilter/netinet/radix_ipf.c optional ipfilter inet \
-	compile-with "${NORMAL_C} -I$S/netpfil/ipfilter"
+netpfil/ipfilter/netinet/fil.c	optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_auth.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_fil_freebsd.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_frag.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_log.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_nat.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_proxy.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_state.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_lookup.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_pool.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_htable.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_sync.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/mlfk_ipl.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_nat6.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_rules.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_scan.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/ip_dstlist.c optional ipfilter inet compile-with "${IPFILTER_C}"
+netpfil/ipfilter/netinet/radix_ipf.c optional ipfilter inet compile-with "${IPFILTER_C}"
 contrib/libfdt/fdt.c		optional fdt
 contrib/libfdt/fdt_ro.c		optional fdt
 contrib/libfdt/fdt_rw.c		optional fdt
@@ -1410,6 +1393,8 @@ dev/cxgbe/t4_smt.c		optional cxgbe pci \
 	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
 dev/cxgbe/t4_l2t.c		optional cxgbe pci \
 	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
+dev/cxgbe/t4_tpt.c		optional cxgbe pci \
+	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
 dev/cxgbe/t4_tracer.c		optional cxgbe pci \
 	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
 dev/cxgbe/t4_vf.c		optional cxgbev pci \
@@ -1419,6 +1404,8 @@ dev/cxgbe/common/t4_hw.c	optional cxgbe pci \
 dev/cxgbe/common/t4vf_hw.c	optional cxgbev pci \
 	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
 dev/cxgbe/crypto/t6_kern_tls.c	optional cxgbe pci kern_tls \
+	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
+dev/cxgbe/crypto/t7_kern_tls.c	optional cxgbe pci kern_tls \
 	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
 dev/cxgbe/crypto/t4_keyctx.c	optional cxgbe pci \
 	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
@@ -1536,6 +1523,30 @@ t6fw.fw			optional cxgbe					\
 	compile-with	"${CP} ${.ALLSRC} ${.TARGET}"			\
 	no-obj no-implicit-rule						\
 	clean		"t6fw.fw"
+t7fw_cfg.c		optional cxgbe					\
+	compile-with	"${AWK} -f $S/tools/fw_stub.awk t7fw_cfg.fw:t7fw_cfg t7fw_cfg_uwire.fw:t7fw_cfg_uwire -mt7fw_cfg -c${.TARGET}" \
+	no-ctfconvert no-implicit-rule before-depend local		\
+	clean		"t7fw_cfg.c"
+t7fw_cfg.fwo		optional cxgbe					\
+	dependency	"t7fw_cfg.fw"					\
+	compile-with	"${NORMAL_FWO}"					\
+	no-implicit-rule						\
+	clean		"t7fw_cfg.fwo"
+t7fw_cfg.fw		optional cxgbe					\
+	dependency	"$S/dev/cxgbe/firmware/t7fw_cfg.txt"		\
+	compile-with	"${CP} ${.ALLSRC} ${.TARGET}"			\
+	no-obj no-implicit-rule						\
+	clean		"t7fw_cfg.fw"
+t7fw_cfg_uwire.fwo	optional cxgbe					\
+	dependency	"t7fw_cfg_uwire.fw"				\
+	compile-with	"${NORMAL_FWO}"					\
+	no-implicit-rule						\
+	clean		"t7fw_cfg_uwire.fwo"
+t7fw_cfg_uwire.fw	optional cxgbe					\
+	dependency	"$S/dev/cxgbe/firmware/t7fw_cfg_uwire.txt"	\
+	compile-with	"${CP} ${.ALLSRC} ${.TARGET}"			\
+	no-obj no-implicit-rule						\
+	clean		"t7fw_cfg_uwire.fw"
 dev/cxgbe/crypto/t4_crypto.c	optional ccr \
 	compile-with "${NORMAL_C} -I$S/dev/cxgbe"
 dev/cyapa/cyapa.c		optional cyapa iicbus
@@ -1767,6 +1778,7 @@ dev/hid/hpen.c			optional hpen
 dev/hid/hsctrl.c		optional hsctrl
 dev/hid/ietp.c			optional ietp
 dev/hid/ps4dshock.c		optional ps4dshock
+dev/hid/u2f.c			optional u2f
 dev/hid/xb360gp.c		optional xb360gp
 dev/hifn/hifn7751.c		optional hifn
 dev/hptiop/hptiop.c		optional hptiop scbus
@@ -1776,6 +1788,19 @@ dev/hwpmc/hwpmc_soft.c		optional hwpmc
 dev/hwreset/hwreset.c		optional hwreset
 dev/hwreset/hwreset_array.c	optional hwreset
 dev/hwreset/hwreset_if.m	optional hwreset
+dev/hwt/hwt.c			optional hwt
+dev/hwt/hwt_backend.c		optional hwt
+dev/hwt/hwt_config.c		optional hwt
+dev/hwt/hwt_context.c		optional hwt
+dev/hwt/hwt_contexthash.c	optional hwt
+dev/hwt/hwt_cpu.c		optional hwt
+dev/hwt/hwt_hook.c		optional hwt
+dev/hwt/hwt_ioctl.c		optional hwt
+dev/hwt/hwt_owner.c		optional hwt
+dev/hwt/hwt_ownerhash.c		optional hwt
+dev/hwt/hwt_record.c		optional hwt
+dev/hwt/hwt_thread.c		optional hwt
+dev/hwt/hwt_vm.c		optional hwt
 dev/ichiic/ig4_acpi.c		optional ig4 acpi iicbus
 dev/ichiic/ig4_iic.c		optional ig4 iicbus
 dev/ichiic/ig4_pci.c		optional ig4 pci iicbus
@@ -2283,6 +2308,8 @@ dev/ixgbe/ixgbe_82599.c		optional ix inet | ixv inet \
 dev/ixgbe/ixgbe_x540.c		optional ix inet | ixv inet \
 	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
 dev/ixgbe/ixgbe_x550.c		optional ix inet | ixv inet \
+	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
+dev/ixgbe/ixgbe_e610.c		optional ix inet | ixv inet \
 	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
 dev/ixgbe/ixgbe_dcb.c		optional ix inet | ixv inet \
 	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
@@ -3161,8 +3188,6 @@ dev/sound/midi/midi.c		optional sound
 dev/sound/midi/mpu401.c		optional sound
 dev/sound/midi/mpu_if.m		optional sound
 dev/sound/midi/mpufoi_if.m	optional sound
-dev/sound/midi/sequencer.c	optional sound
-dev/sound/midi/synth_if.m	optional sound
 dev/spibus/acpi_spibus.c	optional acpi spibus
 dev/spibus/ofw_spibus.c		optional fdt spibus
 dev/spibus/spibus.c		optional spibus				\
@@ -3234,6 +3259,19 @@ dev/uart/uart_dev_z8530.c	optional uart uart_z8530 | uart scc
 dev/uart/uart_if.m		optional uart
 dev/uart/uart_subr.c		optional uart
 dev/uart/uart_tty.c		optional uart
+#
+# Universal Flash Storage Host Controller Interface drivers
+#
+dev/ufshci/ufshci.c		optional ufshci
+dev/ufshci/ufshci_ctrlr.c	optional ufshci
+dev/ufshci/ufshci_ctrlr_cmd.c	optional ufshci
+dev/ufshci/ufshci_dev.c		optional ufshci
+dev/ufshci/ufshci_pci.c		optional ufshci
+dev/ufshci/ufshci_req_queue.c	optional ufshci
+dev/ufshci/ufshci_req_sdb.c	optional ufshci
+dev/ufshci/ufshci_sim.c		optional ufshci
+dev/ufshci/ufshci_sysctl.c	optional ufshci
+dev/ufshci/ufshci_uic_cmd.c	optional ufshci
 #
 # USB controller drivers
 #
@@ -3442,7 +3480,6 @@ dev/virtio/mmio/virtio_mmio.c		optional	virtio_mmio
 dev/virtio/mmio/virtio_mmio_acpi.c	optional	virtio_mmio acpi
 dev/virtio/mmio/virtio_mmio_cmdline.c	optional	virtio_mmio
 dev/virtio/mmio/virtio_mmio_fdt.c	optional	virtio_mmio fdt
-dev/virtio/mmio/virtio_mmio_if.m	optional	virtio_mmio
 dev/virtio/network/if_vtnet.c		optional	vtnet
 dev/virtio/balloon/virtio_balloon.c	optional	virtio_balloon
 dev/virtio/block/virtio_blk.c		optional	virtio_blk
@@ -3763,6 +3800,7 @@ gnu/gcov/gcov_subr.c		optional gcov
 
 kern/bus_if.m			standard
 kern/clock_if.m			standard
+kern/coredump_vnode.c		standard
 kern/cpufreq_if.m		standard
 kern/device_if.m		standard
 kern/imgact_binmisc.c		optional imgact_binmisc
@@ -3799,6 +3837,7 @@ kern/kern_hhook.c		standard
 kern/kern_idle.c		standard
 kern/kern_intr.c		standard
 kern/kern_jail.c		standard
+kern/kern_jaildesc.c		standard
 kern/kern_jailmeta.c		standard
 kern/kern_kcov.c		optional kcov			\
 	compile-with "${NOSAN_C} ${MSAN_CFLAGS}"
@@ -3851,6 +3890,7 @@ kern/kern_time.c		standard
 kern/kern_timeout.c		standard
 kern/kern_tslog.c		optional tslog
 kern/kern_ubsan.c		optional kubsan
+kern/kern_ucoredump.c		standard
 kern/kern_umtx.c		standard
 kern/kern_uuid.c		standard
 kern/kern_vnodedumper.c		standard
@@ -3866,7 +3906,7 @@ kern/sched_ule.c		optional sched_ule
 kern/serdev_if.m		standard
 kern/stack_protector.c		standard \
 	compile-with "${NORMAL_C:N-fstack-protector*}"
-kern/subr_acl_nfs4.c		optional ufs_acl | zfs
+kern/subr_acl_nfs4.c		optional ufs_acl | zfs | nfscl
 kern/subr_acl_posix1e.c		optional ufs_acl
 kern/subr_asan.c		optional kasan \
 	compile-with "${NOSAN_C:N-fstack-protector*}"
@@ -3980,6 +4020,7 @@ kern/vfs_export.c		standard
 kern/vfs_extattr.c		standard
 kern/vfs_hash.c			standard
 kern/vfs_init.c			standard
+kern/vfs_inotify.c		standard
 kern/vfs_lookup.c		standard
 kern/vfs_mount.c		standard
 kern/vfs_mountroot.c		standard
@@ -4284,6 +4325,7 @@ netgraph/ng_deflate.c		optional netgraph_deflate
 netgraph/ng_device.c		optional netgraph_device
 netgraph/ng_echo.c		optional netgraph_echo
 netgraph/ng_eiface.c		optional netgraph_eiface
+# netgate: keep for in-kernel ng_etf(4) build support
 netgraph/ng_etf.c		optional netgraph_etf
 netgraph/ng_ether.c		optional netgraph_ether
 netgraph/ng_ether_echo.c	optional netgraph_ether_echo
@@ -4358,15 +4400,23 @@ netinet/cc/cc.c			optional cc_newreno inet | cc_vegas inet | \
 	cc_chd inet | cc_cdg inet | cc_newreno inet6 | cc_vegas inet6 | \
 	cc_htcp inet6 | cc_hd inet6 |cc_dctcp inet6 | cc_cubic inet6 | \
 	cc_chd inet6 | cc_cdg inet6
-netinet/cc/cc_cdg.c		optional inet cc_cdg tcp_hhook
-netinet/cc/cc_chd.c		optional inet cc_chd tcp_hhook
+netinet/cc/cc_cdg.c		optional inet cc_cdg tcp_hhook | \
+	inet6 cc_cdg tcp_hhook
+netinet/cc/cc_chd.c		optional inet cc_chd tcp_hhook | \
+	inet6 cc_chd tcp_hhook
 netinet/cc/cc_cubic.c		optional inet cc_cubic | inet6 cc_cubic
 netinet/cc/cc_dctcp.c		optional inet cc_dctcp | inet6 cc_dctcp
-netinet/cc/cc_hd.c		optional inet cc_hd tcp_hhook
+netinet/cc/cc_hd.c		optional inet cc_hd tcp_hhook | \
+	inet6 cc_hd tcp_hhook
 netinet/cc/cc_htcp.c		optional inet cc_htcp | inet6 cc_htcp
 netinet/cc/cc_newreno.c		optional inet cc_newreno | inet6 cc_newreno
-netinet/cc/cc_vegas.c		optional inet cc_vegas tcp_hhook
-netinet/khelp/h_ertt.c		optional inet tcp_hhook
+netinet/cc/cc_vegas.c		optional inet cc_vegas tcp_hhook | \
+	inet6 cc_vegas tcp_hhook
+netinet/khelp/h_ertt.c		optional inet tcp_hhook cc_cdg | \
+	inet tcp_hhook cc_chd | inet tcp_hhook cc_hd | \
+	inet tcp_hhook cc_vegas | inet6 tcp_hhook cc_cdg | \
+	inet6 tcp_hhook cc_chd | inet6 tcp_hhook cc_hd | \
+	inet6 tcp_hhook cc_vegas
 netinet/sctp_asconf.c		optional inet sctp | inet6 sctp
 netinet/sctp_auth.c		optional inet sctp | inet6 sctp
 netinet/sctp_bsd_addr.c		optional inet sctp | inet6 sctp

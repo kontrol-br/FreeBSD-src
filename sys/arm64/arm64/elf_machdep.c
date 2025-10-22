@@ -57,11 +57,21 @@
 
 u_long __read_frequently elf_hwcap;
 u_long __read_frequently elf_hwcap2;
+u_long __read_frequently elf_hwcap3;
+u_long __read_frequently elf_hwcap4;
 /* TODO: Move to a better location */
 u_long __read_frequently linux_elf_hwcap;
 u_long __read_frequently linux_elf_hwcap2;
+u_long __read_frequently linux_elf_hwcap3;
+u_long __read_frequently linux_elf_hwcap4;
 
-struct arm64_addr_mask elf64_addr_mask;
+struct arm64_addr_mask elf64_addr_mask = {
+    .code = TBI_ADDR_MASK,
+    .data = TBI_ADDR_MASK,
+};
+#ifdef COMPAT_FREEBSD14
+struct arm64_addr_mask elf64_addr_mask_14;
+#endif
 
 static void arm64_exec_protect(struct image_params *, int);
 
@@ -101,6 +111,8 @@ static struct sysentvec elf64_freebsd_sysvec = {
 	.sv_trap	= NULL,
 	.sv_hwcap	= &elf_hwcap,
 	.sv_hwcap2	= &elf_hwcap2,
+	.sv_hwcap3	= &elf_hwcap3,
+	.sv_hwcap4	= &elf_hwcap4,
 	.sv_onexec_old	= exec_onexec_old,
 	.sv_protect	= arm64_exec_protect,
 	.sv_onexit	= exit_onexit,
@@ -109,7 +121,7 @@ static struct sysentvec elf64_freebsd_sysvec = {
 };
 INIT_SYSENTVEC(elf64_sysvec, &elf64_freebsd_sysvec);
 
-static Elf64_Brandinfo freebsd_brand_info = {
+static const Elf64_Brandinfo freebsd_brand_info = {
 	.brand		= ELFOSABI_FREEBSD,
 	.machine	= EM_AARCH64,
 	.compat_3_brand	= "FreeBSD",
@@ -119,8 +131,7 @@ static Elf64_Brandinfo freebsd_brand_info = {
 	.brand_note	= &elf64_freebsd_brandnote,
 	.flags		= BI_CAN_EXEC_DYN | BI_BRAND_NOTE
 };
-
-SYSINIT(elf64, SI_SUB_EXEC, SI_ORDER_FIRST,
+C_SYSINIT(elf64, SI_SUB_EXEC, SI_ORDER_FIRST,
     (sysinit_cfunc_t)elf64_insert_brand_entry, &freebsd_brand_info);
 
 static bool
@@ -130,7 +141,14 @@ get_arm64_addr_mask(struct regset *rs, struct thread *td, void *buf,
 	if (buf != NULL) {
 		KASSERT(*sizep == sizeof(elf64_addr_mask),
 		    ("%s: invalid size", __func__));
-		memcpy(buf, &elf64_addr_mask, sizeof(elf64_addr_mask));
+#ifdef COMPAT_FREEBSD14
+		/* running an old binary use the old address mask */
+		if (td->td_proc->p_osrel < TBI_VERSION)
+			memcpy(buf, &elf64_addr_mask_14,
+			    sizeof(elf64_addr_mask_14));
+		else
+#endif
+			memcpy(buf, &elf64_addr_mask, sizeof(elf64_addr_mask));
 	}
 	*sizep = sizeof(elf64_addr_mask);
 
@@ -317,7 +335,7 @@ elf_cpu_parse_dynamic(caddr_t loadbase __unused, Elf_Dyn *dynamic __unused)
 	return (0);
 }
 
-static Elf_Note gnu_property_note = {
+static const Elf_Note gnu_property_note = {
 	.n_namesz = sizeof(GNU_ABI_VENDOR),
 	.n_descsz = 16,
 	.n_type = NT_GNU_PROPERTY_TYPE_0,

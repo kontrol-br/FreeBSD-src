@@ -161,22 +161,23 @@ apple_pinctrl_attach(device_t dev)
 		goto error;
 	}
 
-	sc->sc_busdev = gpiobus_attach_bus(dev);
+	fdt_pinctrl_register(dev, "pinmux");
+	fdt_pinctrl_configure_tree(dev);
+
+	if (OF_hasprop(node, "interrupt-controller")) {
+		sc->sc_irqs = mallocarray(sc->sc_ngpios,
+		    sizeof(*sc->sc_irqs), M_DEVBUF, M_ZERO | M_WAITOK);
+		intr_pic_register(dev,
+		    OF_xref_from_node(ofw_bus_get_node(dev)));
+	}
+
+	sc->sc_busdev = gpiobus_add_bus(dev);
 	if (sc->sc_busdev == NULL) {
 		device_printf(dev, "failed to attach gpiobus\n");
 		goto error;
 	}
 
-	fdt_pinctrl_register(dev, "pinmux");
-	fdt_pinctrl_configure_tree(dev);
-
-	if (!OF_hasprop(node, "interrupt-controller"))
-		return (0);
-
-	sc->sc_irqs = mallocarray(sc->sc_ngpios,
-	    sizeof(*sc->sc_irqs), M_DEVBUF, M_ZERO | M_WAITOK);
-	intr_pic_register(dev, OF_xref_from_node(ofw_bus_get_node(dev)));
-
+	bus_attach_children(dev);
 	return (0);
 error:
 	mtx_destroy(&sc->sc_mtx);

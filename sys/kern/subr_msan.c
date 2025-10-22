@@ -53,6 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_msan.c,v 1.14 2020/09/09 16:29:59 maxv Exp $");
 #include <sys/msan.h>
 #include <sys/proc.h>
 #include <sys/stack.h>
+#include <sys/stdarg.h>
 #include <sys/sysctl.h>
 #include <sys/uio.h>
 
@@ -60,7 +61,6 @@ __KERNEL_RCSID(0, "$NetBSD: subr_msan.c,v 1.14 2020/09/09 16:29:59 maxv Exp $");
 #include <vm/pmap.h>
 
 #include <machine/msan.h>
-#include <machine/stdarg.h>
 
 void kmsan_init_arg(size_t);
 void kmsan_init_ret(size_t);
@@ -1301,6 +1301,7 @@ MSAN_ATOMIC_FUNC_TESTANDSET(32, uint32_t);
 MSAN_ATOMIC_FUNC_TESTANDSET(64, uint64_t);
 MSAN_ATOMIC_FUNC_TESTANDSET(int, u_int);
 MSAN_ATOMIC_FUNC_TESTANDSET(long, u_long);
+MSAN_ATOMIC_FUNC_TESTANDSET(acq_long, u_long);
 MSAN_ATOMIC_FUNC_TESTANDSET(ptr, uintptr_t);
 
 MSAN_ATOMIC_FUNC_SWAP(32, uint32_t);

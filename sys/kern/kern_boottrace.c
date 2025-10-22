@@ -33,11 +33,10 @@
 #include <sys/proc.h>
 #include <sys/resourcevar.h>
 #include <sys/sbuf.h>
+#include <sys/stdarg.h>
 #include <sys/syscallsubr.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
-
-#include <machine/stdarg.h>
 
 #define	dprintf(fmt, ...)						\
 	do {								\
@@ -580,7 +579,7 @@ sysctl_boottrace_reset(SYSCTL_HANDLER_ARGS)
 }
 
 static void
-boottrace_init(void)
+boottrace_init(void *dummy __unused)
 {
 
 	if (!boottrace_enabled)

@@ -103,7 +103,7 @@
 #
 # See src/UPDATING `COMMON ITEMS' for more complete information.
 #
-# If TARGET=machine (e.g. powerpc, arm64, ...) is specified you can
+# If TARGET=machine (e.g. powerpc64, arm64, ...) is specified you can
 # cross build world for other machine types using the buildworld target,
 # and once the world is built you can cross build a kernel using the
 # buildkernel target.
@@ -175,7 +175,7 @@ TGTS=	all all-man buildenv buildenvvars buildetc buildkernel buildworld \
 	create-packages-world create-packages-kernel \
 	create-packages-kernel-repo create-packages-world-repo \
 	create-packages-source create-packages \
-	update-packages packages installconfig real-packages real-update-packages \
+	installconfig real-packages real-update-packages \
 	sign-packages package-pkg print-dir test-system-compiler test-system-linker \
 	test-includes
 
@@ -219,6 +219,8 @@ META_TGT_WHITELIST+=	build${libcompat}
 .ORDER: buildworld distribute
 .ORDER: buildworld distributeworld
 .ORDER: buildworld buildkernel
+.ORDER: buildworld packages
+.ORDER: buildworld update-packages
 .ORDER: distrib-dirs distribute
 .ORDER: distrib-dirs distributeworld
 .ORDER: distrib-dirs installworld
@@ -232,6 +234,8 @@ META_TGT_WHITELIST+=	build${libcompat}
 .ORDER: buildkernel installkernel.debug
 .ORDER: buildkernel reinstallkernel
 .ORDER: buildkernel reinstallkernel.debug
+.ORDER: buildkernel packages
+.ORDER: buildkernel update-packages
 .ORDER: kernel-toolchain buildkernel
 
 # Only sanitize PATH on FreeBSD.
@@ -517,6 +521,9 @@ kernels: .PHONY
 worlds: .PHONY
 	@cd ${.CURDIR}; ${SUB_MAKE} UNIVERSE_TARGET=buildworld universe
 
+packages update-packages: .PHONY
+	${_+_}@cd ${.CURDIR}; ${_MAKE} DISTDIR=/ ${.TARGET}
+
 #
 # universe
 #
@@ -530,8 +537,7 @@ worlds: .PHONY
 # Don't build rarely used, semi-supported architectures unless requested.
 #
 .if defined(EXTRA_TARGETS)
-# powerpcspe excluded from main list until clang fixed
-EXTRA_ARCHES_powerpc=	powerpcspe
+EXTRA_ARCHES_powerpc=	powerpc powerpcspe
 .endif
 TARGETS?= ${TARGET_MACHINE_LIST}
 _UNIVERSE_TARGETS=	${TARGETS}
@@ -546,8 +552,7 @@ TOOLCHAINS_amd64=	amd64-${_GCC_VERSION}
 TOOLCHAINS_arm=		armv7-${_GCC_VERSION}
 TOOLCHAINS_arm64=	aarch64-${_GCC_VERSION}
 TOOLCHAINS_i386=	i386-${_GCC_VERSION}
-TOOLCHAINS_powerpc=	powerpc-${_GCC_VERSION} powerpc64-${_GCC_VERSION}
-TOOLCHAIN_powerpc64=	powerpc64-${_GCC_VERSION}
+TOOLCHAINS_powerpc=	powerpc64-${_GCC_VERSION}
 TOOLCHAINS_riscv=	riscv64-${_GCC_VERSION}
 .endif
 

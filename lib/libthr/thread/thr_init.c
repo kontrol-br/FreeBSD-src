@@ -170,7 +170,6 @@ STATIC_LIB_REQUIRE(_sem_trywait);
 STATIC_LIB_REQUIRE(_sem_wait);
 STATIC_LIB_REQUIRE(_sigaction);
 STATIC_LIB_REQUIRE(_sigprocmask);
-STATIC_LIB_REQUIRE(_sigsuspend);
 STATIC_LIB_REQUIRE(_sigtimedwait);
 STATIC_LIB_REQUIRE(_sigwait);
 STATIC_LIB_REQUIRE(_sigwaitinfo);
@@ -354,7 +353,7 @@ _libpthread_init(struct pthread *curthread)
 	_thread_active_threads = 1;
 
 	/* Setup the thread specific data */
-	_tcb_set(curthread->tcb);
+	__thr_setup_tsd(curthread);
 
 	if (first) {
 		_thr_initial = curthread;

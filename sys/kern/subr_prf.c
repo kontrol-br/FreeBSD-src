@@ -69,12 +69,8 @@
 #include <ddb/ddb.h>
 #endif
 
-/*
- * Note that stdarg.h and the ANSI style va_start macro is used for both
- * ANSI and traditional C compilers.
- */
 #ifdef _KERNEL
-#include <machine/stdarg.h>
+#include <sys/stdarg.h>
 #else
 #include <stdarg.h>
 #endif
@@ -770,7 +766,7 @@ reswitch:	switch (ch = (u_char)*fmt++) {
 				PCHAR(hex2ascii(*up & 0x0f));
 				up++;
 				if (width)
-					for (q=p;*q;q++)
+					for (q = p; *q; q++)
 						PCHAR(*q);
 			}
 			break;

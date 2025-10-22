@@ -47,7 +47,7 @@
 #include <sys/filedesc.h>
 #include <sys/sysctl.h>
 
-#define LOG_RDPRI	(PZERO + 1)
+#define LOG_RDPRI	PZERO
 
 #define LOG_ASYNC	0x04
 
@@ -79,6 +79,7 @@ static const struct filterops log_read_filterops = {
 	.f_attach =	NULL,
 	.f_detach =	logkqdetach,
 	.f_event =	logkqread,
+	.f_copy = knote_triv_copy,
 };
 
 static struct logsoftc {

@@ -51,6 +51,7 @@
 #include <sys/sysctl.h>
 #include <sys/syslog.h>
 #include <sys/queue.h>
+#include <sys/random.h>
 
 #include <net/if.h>
 #include <net/if_var.h>
@@ -73,10 +74,13 @@
 #include <netinet/icmp6.h>
 #include <netinet6/scope6_var.h>
 
+#include <machine/atomic.h>
+
 static struct nd_defrouter *defrtrlist_update(struct nd_defrouter *);
 static int prelist_update(struct nd_prefixctl *, struct nd_defrouter *,
     struct mbuf *, int);
 static int nd6_prefix_onlink(struct nd_prefix *);
+static int in6_get_tmp_ifid(struct in6_aliasreq *);
 
 TAILQ_HEAD(nd6_drhead, nd_defrouter);
 VNET_DEFINE_STATIC(struct nd6_drhead, nd6_defrouter);
@@ -90,8 +94,10 @@ VNET_DEFINE(int, nd6_defifindex);
 #define	V_nd6_defifp			VNET(nd6_defifp)
 
 VNET_DEFINE(int, ip6_use_tempaddr) = 0;
+VNET_DEFINE(bool, ip6_use_stableaddr) = 0;
 
 VNET_DEFINE(int, ip6_desync_factor);
+VNET_DEFINE(uint32_t, ip6_temp_max_desync_factor) = TEMP_MAX_DESYNC_FACTOR_BASE;
 VNET_DEFINE(u_int32_t, ip6_temp_preferred_lifetime) = DEF_TEMP_PREFERRED_LIFETIME;
 VNET_DEFINE(u_int32_t, ip6_temp_valid_lifetime) = DEF_TEMP_VALID_LIFETIME;
 
@@ -520,7 +526,6 @@ nd6_ra_input(struct mbuf *m, int off, int icmp6len)
 			    ND_OPT_PI_FLAG_ONLINK) ? 1 : 0;
 			pr.ndpr_raf_auto = (pi->nd_opt_pi_flags_reserved &
 			    ND_OPT_PI_FLAG_AUTO) ? 1 : 0;
-			pr.ndpr_raf_ra_derived = 1;
 			pr.ndpr_plen = pi->nd_opt_pi_prefix_len;
 			pr.ndpr_vltime = ntohl(pi->nd_opt_pi_valid_time);
 			pr.ndpr_pltime = ntohl(pi->nd_opt_pi_preferred_time);
@@ -1180,9 +1185,9 @@ in6_ifadd(struct nd_prefixctl *pr, int mcast)
 	struct ifnet *ifp = pr->ndpr_ifp;
 	struct ifaddr *ifa;
 	struct in6_aliasreq ifra;
-	struct in6_ifaddr *ia, *ib;
+	struct in6_ifaddr *ia = NULL, *ib = NULL;
 	int error, plen0;
-	struct in6_addr mask;
+	struct in6_addr *ifid_addr = NULL, mask, newaddr;
 	int prefixlen = pr->ndpr_plen;
 	int updateflags;
 	char ip6buf[INET6_ADDRSTRLEN];
@@ -1208,37 +1213,69 @@ in6_ifadd(struct nd_prefixctl *pr, int mcast)
 	 * (4) it is easier to manage when an interface has addresses
 	 * with the same interface identifier, than to have multiple addresses
 	 * with different interface identifiers.
+	 *
+	 * If using stable privacy generation, generate a new address with
+	 * the algorithm specified in RFC 7217 section 5
 	 */
-	ifa = (struct ifaddr *)in6ifa_ifpforlinklocal(ifp, 0); /* 0 is OK? */
-	if (ifa)
-		ib = (struct in6_ifaddr *)ifa;
-	else
-		return NULL;
-
-	/* prefixlen + ifidlen must be equal to 128 */
-	plen0 = in6_mask2len(&ib->ia_prefixmask.sin6_addr, NULL);
-	if (prefixlen != plen0) {
-		ifa_free(ifa);
-		nd6log((LOG_INFO,
-		    "%s: wrong prefixlen for %s (prefix=%d ifid=%d)\n",
-		    __func__, if_name(ifp), prefixlen, 128 - plen0));
-		return NULL;
-	}
 
 	/* make ifaddr */
 	in6_prepare_ifra(&ifra, &pr->ndpr_prefix.sin6_addr, &mask);
 
+	if (ND_IFINFO(ifp)->flags & ND6_IFF_STABLEADDR) {
+		memcpy(&newaddr, &pr->ndpr_prefix.sin6_addr,  sizeof(pr->ndpr_prefix.sin6_addr));
+
+		if(!in6_get_stableifid(ifp, &newaddr, prefixlen))
+			return NULL;
+	} else {
+		ifa = (struct ifaddr *)in6ifa_ifpforlinklocal(ifp, 0); /* 0 is OK? */
+		if (ifa) {
+			ib = (struct in6_ifaddr *)ifa;
+			ifid_addr = &ib->ia_addr.sin6_addr;
+
+			/* prefixlen + ifidlen must be equal to 128 */
+			plen0 = in6_mask2len(&ib->ia_prefixmask.sin6_addr, NULL);
+			if (prefixlen != plen0) {
+				ifa_free(ifa);
+				ifid_addr = NULL;
+				nd6log((LOG_DEBUG,
+				    "%s: wrong prefixlen for %s (prefix=%d ifid=%d)\n",
+				    __func__, if_name(ifp), prefixlen, 128 - plen0));
+			}
+		}
+
+		/* No suitable LL address, get the ifid directly */
+		if (ifid_addr == NULL) {
+			ifa = ifa_alloc(sizeof(struct in6_ifaddr), M_NOWAIT);
+			if (ifa != NULL) {
+				ib = (struct in6_ifaddr *)ifa;
+				ifid_addr = &ib->ia_addr.sin6_addr;
+				if(in6_get_ifid(ifp, NULL, ifid_addr) != 0) {
+					nd6log((LOG_DEBUG,
+					    "%s: failed to get ifid for %s\n",
+					    __func__, if_name(ifp)));
+					ifa_free(ifa);
+					ifid_addr = NULL;
+				}
+			}
+		}
+
+		if (ifid_addr == NULL) {
+			nd6log((LOG_INFO,
+			    "%s: could not determine ifid for %s\n",
+			    __func__, if_name(ifp)));
+			return NULL;
+		}
+
+		memcpy(&newaddr, &ib->ia_addr.sin6_addr, sizeof(ib->ia_addr.sin6_addr));
+		ifa_free(ifa);
+	}
+
 	IN6_MASK_ADDR(&ifra.ifra_addr.sin6_addr, &mask);
 	/* interface ID */
-	ifra.ifra_addr.sin6_addr.s6_addr32[0] |=
-	    (ib->ia_addr.sin6_addr.s6_addr32[0] & ~mask.s6_addr32[0]);
-	ifra.ifra_addr.sin6_addr.s6_addr32[1] |=
-	    (ib->ia_addr.sin6_addr.s6_addr32[1] & ~mask.s6_addr32[1]);
-	ifra.ifra_addr.sin6_addr.s6_addr32[2] |=
-	    (ib->ia_addr.sin6_addr.s6_addr32[2] & ~mask.s6_addr32[2]);
-	ifra.ifra_addr.sin6_addr.s6_addr32[3] |=
-	    (ib->ia_addr.sin6_addr.s6_addr32[3] & ~mask.s6_addr32[3]);
-	ifa_free(ifa);
+	ifra.ifra_addr.sin6_addr.s6_addr32[0] |= (newaddr.s6_addr32[0] & ~mask.s6_addr32[0]);
+	ifra.ifra_addr.sin6_addr.s6_addr32[1] |= (newaddr.s6_addr32[1] & ~mask.s6_addr32[1]);
+	ifra.ifra_addr.sin6_addr.s6_addr32[2] |= (newaddr.s6_addr32[2] & ~mask.s6_addr32[2]);
+	ifra.ifra_addr.sin6_addr.s6_addr32[3] |= (newaddr.s6_addr32[3] & ~mask.s6_addr32[3]);
 
 	/* lifetimes. */
 	ifra.ifra_lifetime.ia6t_vltime = pr->ndpr_vltime;
@@ -1469,6 +1506,7 @@ prelist_update(struct nd_prefixctl *new, struct nd_defrouter *dr,
 	int auth;
 	struct in6_addrlifetime lt6_tmp;
 	char ip6buf[INET6_ADDRSTRLEN];
+	bool has_temporary = false;
 
 	NET_EPOCH_ASSERT();
 
@@ -1614,9 +1652,6 @@ prelist_update(struct nd_prefixctl *new, struct nd_defrouter *dr,
 		if (ifa6->ia6_ndpr != pr)
 			continue;
 
-		if (ia6_match == NULL) /* remember the first one */
-			ia6_match = ifa6;
-
 		/*
 		 * An already autoconfigured address matched.  Now that we
 		 * are sure there is at least one matched address, we can
@@ -1676,6 +1711,13 @@ prelist_update(struct nd_prefixctl *new, struct nd_defrouter *dr,
 		if ((ifa6->ia6_flags & IN6_IFF_TEMPORARY) != 0) {
 			u_int32_t maxvltime, maxpltime;
 
+			/*
+			 * if stable addresses (RFC 7217) are enabled, mark that a temporary address has been found
+			 * to avoid generating uneeded extra ones.
+			 */
+			if (ND_IFINFO(ifp)->flags & ND6_IFF_STABLEADDR)
+				has_temporary = true;
+
 			if (V_ip6_temp_valid_lifetime >
 			    (u_int32_t)((time_uptime - ifa6->ia6_createtime) +
 			    V_ip6_desync_factor)) {
@@ -1704,6 +1746,24 @@ prelist_update(struct nd_prefixctl *new, struct nd_defrouter *dr,
 		}
 		ifa6->ia6_lifetime = lt6_tmp;
 		ifa6->ia6_updatetime = time_uptime;
+
+		/*
+		 * If using stable addresses (RFC 7217) and we still have retries to perform, ignore
+		 * addresses already marked as duplicated, since a new one will be generated.
+		 * Also ignore addresses marked as temporary, since their generation is orthogonal to
+		 * opaque stable ones.
+		 *
+		 * There is a small race condition, in that the dad_counter could be incremented
+		 * between here and when a new address is generated, but this will cause that generation
+		 * to fail and no further retries should happen.
+		 */
+		if (ND_IFINFO(ifp)->flags & ND6_IFF_STABLEADDR &&
+		    atomic_load_int(&DAD_FAILURES(ifp)) <= V_ip6_stableaddr_maxretries &&
+		    ifa6->ia6_flags & (IN6_IFF_DUPLICATED | IN6_IFF_TEMPORARY))
+			continue;
+
+		if (ia6_match == NULL) /* remember the first one */
+			ia6_match = ifa6;
 	}
 	if (ia6_match == NULL && new->ndpr_vltime) {
 		int ifidlen;
@@ -1754,8 +1814,11 @@ prelist_update(struct nd_prefixctl *new, struct nd_defrouter *dr,
 			 * immediately together with a new set of temporary
 			 * addresses.  Thus, we specifiy 1 as the 2nd arg of
 			 * in6_tmpifadd().
+			 *
+			 * Skip this if a temporary address has been marked as
+			 * found (happens only if stable addresses (RFC 7217) is in use)
 			 */
-			if (V_ip6_use_tempaddr) {
+			if (V_ip6_use_tempaddr && !has_temporary) {
 				int e;
 				if ((e = in6_tmpifadd(ia6, 1, 1)) != 0) {
 					nd6log((LOG_NOTICE, "%s: failed to "
@@ -2227,6 +2290,54 @@ restart:
 }
 
 /*
+ * Get a randomized interface identifier for a temporary address
+ * Based on RFC 8981, Section 3.3.1.
+ */
+static int
+in6_get_tmp_ifid(struct in6_aliasreq *ifra)
+{
+	struct in6_addr *addr;
+
+	if(!is_random_seeded()){
+		return 1;
+	}
+
+	addr = &(ifra->ifra_addr.sin6_addr);
+regen:
+	ifra->ifra_addr.sin6_addr.s6_addr32[2] |=
+	    (arc4random() & ~(ifra->ifra_prefixmask.sin6_addr.s6_addr32[2]));
+	ifra->ifra_addr.sin6_addr.s6_addr32[3] |=
+	    (arc4random() & ~(ifra->ifra_prefixmask.sin6_addr.s6_addr32[3]));
+
+	/*
+	 * Check if generated address is not inappropriate:
+	 *
+	 * - Reserved IPv6 Interface aIdentifers
+	 *   (https://www.iana.org/assignments/ipv6-interface-ids/)
+	 */
+
+	/* Subnet-router anycast: 0000:0000:0000:0000 */
+	if (!(addr->s6_addr32[2] | addr->s6_addr32[3]))
+		goto regen;
+
+	/*
+	 * IANA Ethernet block: 0200:5EFF:FE00:0000-0200:5EFF:FE00:5212
+	 * Proxy Mobile IPv6:   0200:5EFF:FE00:5213
+	 * IANA Ethernet block: 0200:5EFF:FE00:5214-0200:5EFF:FEFF:FFFF
+	 */
+	if (ntohl(addr->s6_addr32[2]) == 0x02005eff &&
+	    (ntohl(addr->s6_addr32[3]) & 0Xff000000) == 0xfe000000)
+		goto regen;
+
+	/* Reserved subnet anycast addresses */
+	if (ntohl(addr->s6_addr32[2]) == 0xfdffffff &&
+	    ntohl(addr->s6_addr32[3]) >= 0Xffffff80)
+		goto regen;
+
+	return 0;
+}
+
+/*
  * ia0 - corresponding public address
  */
 int
@@ -2238,7 +2349,6 @@ in6_tmpifadd(const struct in6_ifaddr *ia0, int forcegen, int delay)
 	int error;
 	int trylimit = 3;	/* XXX: adhoc value */
 	int updateflags;
-	u_int32_t randid[2];
 	time_t vltime0, pltime0;
 
 	in6_prepare_ifra(&ifra, &ia0->ia_addr.sin6_addr,
@@ -2250,16 +2360,11 @@ in6_tmpifadd(const struct in6_ifaddr *ia0, int forcegen, int delay)
 	    &ifra.ifra_prefixmask.sin6_addr);
 
   again:
-	if (in6_get_tmpifid(ifp, (u_int8_t *)randid,
-	    (const u_int8_t *)&ia0->ia_addr.sin6_addr.s6_addr[8], forcegen)) {
+	if (in6_get_tmp_ifid(&ifra) != 0) {
 		nd6log((LOG_NOTICE, "%s: failed to find a good random IFID\n",
 		    __func__));
 		return (EINVAL);
 	}
-	ifra.ifra_addr.sin6_addr.s6_addr32[2] |=
-	    (randid[0] & ~(ifra.ifra_prefixmask.sin6_addr.s6_addr32[2]));
-	ifra.ifra_addr.sin6_addr.s6_addr32[3] |=
-	    (randid[1] & ~(ifra.ifra_prefixmask.sin6_addr.s6_addr32[3]));
 
 	/*
 	 * in6_get_tmpifid() quite likely provided a unique interface ID.

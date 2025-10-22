@@ -979,10 +979,7 @@ ses_paths_iter(enc_softc_t *enc, enc_element_t *elm,
 			     != CAM_REQ_CMP)
 				return;
 
-			memset(&cgd, 0, sizeof(cgd));
-			xpt_setup_ccb(&cgd.ccb_h, path, CAM_PRIORITY_NORMAL);
-			cgd.ccb_h.func_code = XPT_GDEV_TYPE;
-			xpt_action((union ccb *)&cgd);
+			xpt_gdev_type(&cgd, path);
 			if (cam_ccb_success((union ccb *)&cgd))
 				callback(enc, elm, path, callback_arg);
 
@@ -2305,7 +2302,7 @@ ses_print_addl_data_sas_type0(char *sesname, struct sbuf *sbp,
 	sbuf_putc(sbp, '\n');
 	if (addl->proto_data.sasdev_phys == NULL)
 		return;
-	for (i = 0;i < addl->proto_hdr.sas->base_hdr.num_phys;i++) {
+	for (i = 0; i < addl->proto_hdr.sas->base_hdr.num_phys; i++) {
 		phy = &addl->proto_data.sasdev_phys[i];
 		sbuf_printf(sbp, "%s:  phy %d:", sesname, i);
 		if (ses_elm_sas_dev_phy_sata_dev(phy))
@@ -2352,7 +2349,7 @@ ses_print_addl_data_sas_type1(char *sesname, struct sbuf *sbp,
 		sbuf_printf(sbp, "Expander: %d phys", num_phys);
 		if (addl->proto_data.sasexp_phys == NULL)
 			return;
-		for (i = 0;i < num_phys;i++) {
+		for (i = 0; i < num_phys; i++) {
 			exp_phy = &addl->proto_data.sasexp_phys[i];
 			sbuf_printf(sbp, "%s:  phy %d: connector %d other %d\n",
 			    sesname, i, exp_phy->connector_index,
@@ -2363,7 +2360,7 @@ ses_print_addl_data_sas_type1(char *sesname, struct sbuf *sbp,
 		sbuf_printf(sbp, "Port: %d phys", num_phys);
 		if (addl->proto_data.sasport_phys == NULL)
 			return;
-		for (i = 0;i < num_phys;i++) {
+		for (i = 0; i < num_phys; i++) {
 			port_phy = &addl->proto_data.sasport_phys[i];
 			sbuf_printf(sbp,
 			    "%s:  phy %d: id %d connector %d other %d\n",

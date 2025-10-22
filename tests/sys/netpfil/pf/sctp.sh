@@ -673,6 +673,9 @@ pfsync_body()
 		atf_fail "Initial SCTP connection failed"
 	fi
 
+	# Give pfsync some time to do its thing
+	sleep 1
+
 	# Verify that two has the connection too
 	state=$(jexec ${j}two pfctl -ss | grep sctp)
 	if [ -z "${state}" ];
@@ -810,7 +813,7 @@ related_icmp_body()
 	fi
 
 	# Do we see ICMP traffic if we send overly large traffic?
-	echo "foo" | jexec srv nc --sctp -N -l 1234 >/dev/null &
+	echo "foo" | jexec srv nc --sctp -l 1234 >/dev/null &
 	sleep 1
 
 	atf_check -s exit:0 -o not-match:".*destination unreachable:.*" \

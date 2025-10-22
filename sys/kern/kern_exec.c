@@ -29,6 +29,7 @@
 #include <sys/cdefs.h>
 #include "opt_capsicum.h"
 #include "opt_hwpmc_hooks.h"
+#include "opt_hwt_hooks.h"
 #include "opt_ktrace.h"
 #include "opt_vm.h"
 
@@ -69,6 +70,7 @@
 #include <sys/sysent.h>
 #include <sys/sysproto.h>
 #include <sys/timers.h>
+#include <sys/ucoredump.h>
 #include <sys/umtxvar.h>
 #include <sys/vnode.h>
 #include <sys/wait.h>
@@ -88,6 +90,10 @@
 
 #ifdef	HWPMC_HOOKS
 #include <sys/pmckern.h>
+#endif
+
+#ifdef HWT_HOOKS
+#include <dev/hwt/hwt_hook.h>
 #endif
 
 #include <security/audit/audit.h>
@@ -412,7 +418,7 @@ do_execve(struct thread *td, struct image_args *args, struct mac *mac_p,
 #endif
 	int error, i, orig_osrel;
 	uint32_t orig_fctl0;
-	Elf_Brandinfo *orig_brandinfo;
+	const Elf_Brandinfo *orig_brandinfo;
 	size_t freepath_size;
 	static const char fexecv_proc_title[] = "(fexecv)";
 
@@ -936,6 +942,20 @@ interpret:
 	}
 #endif
 
+#ifdef HWT_HOOKS
+	if ((td->td_proc->p_flag2 & P2_HWT) != 0) {
+		struct hwt_record_entry ent;
+
+		VOP_UNLOCK(imgp->vp);
+		ent.fullpath = imgp->execpath;
+		ent.addr = imgp->et_dyn_addr;
+		ent.baseaddr = imgp->reloc_base;
+		ent.record_type = HWT_RECORD_EXECUTABLE;
+		HWT_CALL_HOOK(td, HWT_EXEC, &ent);
+		vn_lock(imgp->vp, LK_SHARED | LK_RETRY);
+	}
+#endif
+
 	/* Set values passed into the program in registers. */
 	(*p->p_sysent->sv_setregs)(td, imgp, stack_base);
 
@@ -1294,7 +1314,7 @@ exec_map_stack(struct image_params *imgp)
 		    MAP_INHERIT_SHARE | MAP_ACC_NO_CHARGE);
 	} else {
 		sharedpage_addr = sv->sv_shared_page_base;
-		vm_map_fixed(map, obj, 0,
+		error = vm_map_fixed(map, obj, 0,
 		    sharedpage_addr, sv->sv_shared_page_len,
 		    VM_PROT_READ | VM_PROT_EXECUTE,
 		    VM_PROT_READ | VM_PROT_EXECUTE,
@@ -1983,10 +2003,14 @@ int
 core_write(struct coredump_params *cp, const void *base, size_t len,
     off_t offset, enum uio_seg seg, size_t *resid)
 {
+	return ((*cp->cdw->write_fn)(cp->cdw, base, len, offset, seg,
+	    cp->active_cred, resid, cp->td));
+}
 
-	return (vn_rdwr_inchunks(UIO_WRITE, cp->vp, __DECONST(void *, base),
-	    len, offset, seg, IO_UNIT | IO_DIRECT | IO_RANGELOCKED,
-	    cp->active_cred, cp->file_cred, resid, cp->td));
+static int
+core_extend(struct coredump_params *cp, off_t newsz)
+{
+	return ((*cp->cdw->extend_fn)(cp->cdw, newsz, cp->active_cred));
 }
 
 int
@@ -1994,7 +2018,6 @@ core_output(char *base, size_t len, off_t offset, struct coredump_params *cp,
     void *tmpbuf)
 {
 	vm_map_t map;
-	struct mount *mp;
 	size_t resid, runlen;
 	int error;
 	bool success;
@@ -2049,14 +2072,7 @@ core_output(char *base, size_t len, off_t offset, struct coredump_params *cp,
 			}
 		}
 		if (!success) {
-			error = vn_start_write(cp->vp, &mp, V_WAIT);
-			if (error != 0)
-				break;
-			vn_lock(cp->vp, LK_EXCLUSIVE | LK_RETRY);
-			error = vn_truncate_locked(cp->vp, offset + runlen,
-			    false, cp->td->td_ucred);
-			VOP_UNLOCK(cp->vp);
-			vn_finished_write(mp);
+			error = core_extend(cp, offset + runlen);
 			if (error != 0)
 				break;
 		}
