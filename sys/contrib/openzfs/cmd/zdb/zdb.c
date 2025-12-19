@@ -89,6 +89,7 @@
 #include <sys/zstd/zstd.h>
 #include <sys/backtrace.h>
 
+#include <libzpool.h>
 #include <libnvpair.h>
 #include <libzutil.h>
 #include <libzfs_core.h>
@@ -7899,11 +7900,11 @@ zdb_set_skip_mmp(char *target)
 	 * Disable the activity check to allow examination of
 	 * active pools.
 	 */
-	mutex_enter(&spa_namespace_lock);
+	spa_namespace_enter(FTAG);
 	if ((spa = spa_lookup(target)) != NULL) {
 		spa->spa_import_flags |= ZFS_IMPORT_SKIP_MMP;
 	}
-	mutex_exit(&spa_namespace_lock);
+	spa_namespace_exit(FTAG);
 }
 
 #define	BOGUS_SUFFIX "_CHECKPOINTED_UNIVERSE"
@@ -9747,6 +9748,9 @@ main(int argc, char **argv)
 	 */
 	spa_mode_readable_spacemaps = B_TRUE;
 
+	libspl_set_assert_ok((dump_opt['A'] == 1) || (dump_opt['A'] > 2));
+	zfs_recover = (dump_opt['A'] > 1);
+
 	if (dump_all)
 		verbose = MAX(verbose, 1);
 
@@ -9756,9 +9760,6 @@ main(int argc, char **argv)
 		if (dump_opt[c])
 			dump_opt[c] += verbose;
 	}
-
-	libspl_set_assert_ok((dump_opt['A'] == 1) || (dump_opt['A'] > 2));
-	zfs_recover = (dump_opt['A'] > 1);
 
 	argc -= optind;
 	argv += optind;
@@ -10022,13 +10023,13 @@ main(int argc, char **argv)
 				 * try opening the pool after clearing the
 				 * log state.
 				 */
-				mutex_enter(&spa_namespace_lock);
+				spa_namespace_enter(FTAG);
 				if ((spa = spa_lookup(target)) != NULL &&
 				    spa->spa_log_state == SPA_LOG_MISSING) {
 					spa->spa_log_state = SPA_LOG_CLEAR;
 					error = 0;
 				}
-				mutex_exit(&spa_namespace_lock);
+				spa_namespace_exit(FTAG);
 
 				if (!error) {
 					error = spa_open_rewind(target, &spa,

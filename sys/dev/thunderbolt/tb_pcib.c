@@ -550,15 +550,25 @@ DEFINE_CLASS_1(tbolt, tb_pcib_driver, tb_pcib_methods,
 DRIVER_MODULE_ORDERED(tb_pcib, pci, tb_pcib_driver,
     NULL, NULL, SI_ORDER_MIDDLE);
 MODULE_DEPEND(tb_pcib, pci, 1, 1, 1);
-MODULE_PNP_INFO("U16:vendor;U16:device;U16:subvendor;U16:subdevice;U32:#;D:#",
-    pci, tb_pcib, tb_pcib_identifiers, nitems(tb_pcib_identifiers) - 1);
 
 static int
 tb_pci_probe(device_t dev)
 {
 	struct tb_pcib_ident *n;
+	device_t parent;
+	devclass_t dc;
 
-	if ((n = tb_pcib_find_ident(device_get_parent(dev))) != NULL) {
+	/*
+	 * This driver is only valid if the parent device is a PCI-PCI
+	 * bridge.  To determine that, check if the grandparent is a
+	 * PCI bus.
+	 */
+	parent = device_get_parent(dev);
+	dc = device_get_devclass(device_get_parent(parent));
+	if (strcmp(devclass_get_name(dc), "pci") != 0)
+		return (ENXIO);
+
+	if ((n = tb_pcib_find_ident(parent)) != NULL) {
 		switch (n->flags & TB_GEN_MASK) {
 		case TB_GEN_TB1:
 			device_set_desc(dev, "Thunderbolt 1 Link");

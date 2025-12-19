@@ -480,7 +480,7 @@ isa_claim_resources(device_t dev, device_t child)
 	STAILQ_FOREACH(rle, rl, link) {
 		if (!rle->res) {
 			rid = rle->rid;
-			resource_list_alloc(rl, dev, child, rle->type, &rid,
+			resource_list_alloc(rl, dev, child, rle->type, rid,
 			    0, ~0, 1, 0);
 		}
 	}
@@ -570,7 +570,7 @@ isa_probe_children(device_t dev)
 		    strcmp(kern_ident, "GENERIC") == 0 &&
 		    device_is_attached(child))
 			device_printf(child,
-			    "non-PNP ISA device will be removed from GENERIC in FreeBSD 15.\n");
+			    "non-PNP ISA device will be removed from GENERIC in FreeBSD 16.\n");
 	}
 
 	/*

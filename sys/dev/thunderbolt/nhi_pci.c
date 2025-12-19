@@ -67,7 +67,7 @@ static int	nhi_pci_suspend(device_t);
 static int	nhi_pci_resume(device_t);
 static void	nhi_pci_free(struct nhi_softc *);
 static int	nhi_pci_allocate_interrupts(struct nhi_softc *);
-static void	nhi_pci_free_interrupts(struct nhi_softc *);
+static void	nhi_pci_free_resources(struct nhi_softc *);
 static int	nhi_pci_icl_poweron(struct nhi_softc *);
 
 static device_method_t nhi_methods[] = {
@@ -118,8 +118,6 @@ struct nhi_ident {
 
 DRIVER_MODULE_ORDERED(nhi, pci, nhi_pci_driver, NULL, NULL,
     SI_ORDER_ANY);
-MODULE_PNP_INFO("U16:vendor;U16:device;V16:subvendor;V16:subdevice;U32:#;D:#",
-    pci, nhi, nhi_identifiers, nitems(nhi_identifiers) - 1);
 
 static struct nhi_ident *
 nhi_find_ident(device_t dev)
@@ -253,7 +251,7 @@ static void
 nhi_pci_free(struct nhi_softc *sc)
 {
 
-	nhi_pci_free_interrupts(sc);
+	nhi_pci_free_resources(sc);
 
 	if (sc->parent_dmat != NULL) {
 		bus_dma_tag_destroy(sc->parent_dmat);
@@ -307,7 +305,7 @@ nhi_pci_allocate_interrupts(struct nhi_softc *sc)
 	return (error);
 }
 
-static void
+void
 nhi_pci_free_interrupts(struct nhi_softc *sc)
 {
 	int i;
@@ -319,7 +317,11 @@ nhi_pci_free_interrupts(struct nhi_softc *sc)
 	}
 
 	pci_release_msi(sc->dev);
+}
 
+static void
+nhi_pci_free_resources(struct nhi_softc *sc)
+{
 	if (sc->irq_table != NULL) {
 		bus_release_resource(sc->dev, SYS_RES_MEMORY,
 		    sc->irq_table_rid, sc->irq_table);

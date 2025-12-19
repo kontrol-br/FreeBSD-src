@@ -571,7 +571,11 @@ extern struct sx pf_end_lock;
 
 #ifdef _KERNEL
 
-void				 unhandled_af(int) __dead2;
+static inline __dead2 void
+unhandled_af(int af)
+{
+	panic("unhandled af %d", af);
+}
 
 static void inline
 pf_addrcpy(struct pf_addr *dst, const struct pf_addr *src, sa_family_t af)
@@ -1337,8 +1341,12 @@ VNET_DECLARE(pflow_export_state_t *,	pflow_export_state_ptr);
 #define V_pflow_export_state_ptr	VNET(pflow_export_state_ptr)
 extern pfsync_detach_ifnet_t	*pfsync_detach_ifnet_ptr;
 
-void			pfsync_state_export(union pfsync_state_union *,
-			    struct pf_kstate *, int);
+void			pfsync_state_export_1301(struct pfsync_state_1301 *,
+			    struct pf_kstate *);
+void			pfsync_state_export_1400(struct pfsync_state_1400 *,
+			    struct pf_kstate *);
+void			pfsync_state_export_1500(struct pfsync_state_1500 *,
+			    struct pf_kstate *);
 void			pf_state_export(struct pf_state_export *,
 			    struct pf_kstate *);
 
@@ -2038,14 +2046,15 @@ struct pfioc_trans {
 	}		*array;
 };
 
-#define PFR_FLAG_ATOMIC		0x00000001	/* unused */
+#define PFR_FLAG_START		0x00000001
 #define PFR_FLAG_DUMMY		0x00000002
 #define PFR_FLAG_FEEDBACK	0x00000004
 #define PFR_FLAG_CLSTATS	0x00000008
 #define PFR_FLAG_ADDRSTOO	0x00000010
 #define PFR_FLAG_REPLACE	0x00000020
 #define PFR_FLAG_ALLRSETS	0x00000040
-#define PFR_FLAG_ALLMASK	0x0000007F
+#define PFR_FLAG_DONE		0x00000080
+#define PFR_FLAG_ALLMASK	0x000000FF
 #ifdef _KERNEL
 #define PFR_FLAG_USERIOCTL	0x10000000
 #endif
@@ -2435,6 +2444,7 @@ extern struct pf_ksrc_node	*pf_find_src_node(struct pf_addr *,
 				    struct pf_srchash **, pf_sn_types_t, bool);
 extern void			 pf_unlink_src_node(struct pf_ksrc_node *);
 extern u_int			 pf_free_src_nodes(struct pf_ksrc_node_list *);
+extern void			 pf_free_src_node(struct pf_ksrc_node *);
 extern void			 pf_print_state(struct pf_kstate *);
 extern void			 pf_print_flags(uint16_t);
 extern int			 pf_addr_wrap_neq(struct pf_addr_wrap *,
@@ -2512,7 +2522,6 @@ int	pf_socket_lookup(struct pf_pdesc *);
 struct pf_state_key *pf_alloc_state_key(int);
 int	pf_translate(struct pf_pdesc *, struct pf_addr *, u_int16_t,
 	    struct pf_addr *, u_int16_t, u_int16_t, int);
-int	pf_translate_af(struct pf_pdesc *);
 bool	pf_init_threshold(struct pf_kthreshold *, uint32_t, uint32_t);
 uint16_t	pf_tagname2tag(const char *);
 #ifdef ALTQ
@@ -2521,6 +2530,9 @@ uint16_t	pf_qname2qid(const char *, bool);
 
 void	pfr_initialize(void);
 void	pfr_cleanup(void);
+struct pfr_kentry *
+	pfr_kentry_byaddr(struct pfr_ktable *, struct pf_addr *, sa_family_t,
+	    int);
 int	pfr_match_addr(struct pfr_ktable *, struct pf_addr *, sa_family_t);
 void	pfr_update_stats(struct pfr_ktable *, struct pf_addr *, sa_family_t,
 	    u_int64_t, int, int, int);

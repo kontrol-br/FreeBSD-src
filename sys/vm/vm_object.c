@@ -1988,7 +1988,7 @@ vm_object_page_remove(vm_object_t object, vm_pindex_t start, vm_pindex_t end,
 	    (options & (OBJPR_CLEANONLY | OBJPR_NOTMAPPED)) == OBJPR_NOTMAPPED,
 	    ("vm_object_page_remove: illegal options for object %p", object));
 	if (object->resident_page_count == 0)
-		return;
+		goto remove_pager;
 	vm_object_pip_add(object, 1);
 	vm_page_iter_limit_init(&pages, object, end);
 again:
@@ -2061,6 +2061,7 @@ wired:
 	}
 	vm_object_pip_wakeup(object);
 
+remove_pager:
 	vm_pager_freespace(object, start, (end == 0 ? object->size : end) -
 	    start);
 }
@@ -2242,6 +2243,23 @@ vm_object_coalesce(vm_object_t prev_object, vm_ooffset_t prev_offset,
 	 */
 	if (next_pindex + next_size > prev_object->size)
 		prev_object->size = next_pindex + next_size;
+
+#ifdef INVARIANTS
+	/*
+	 * Re-check: there must be no pages in the next range backed
+	 * by prev_entry's object.  Otherwise, the resulting
+	 * corruption is same as faulting in a non-zeroed page.
+	 */
+	if (vm_check_pg_zero) {
+		vm_pindex_t pidx;
+
+		pidx = swap_pager_seek_data(prev_object, next_pindex);
+		KASSERT(pidx >= next_pindex + next_size,
+		    ("found obj %p pindex %#jx e %#jx %#jx %#jx",
+		    prev_object, pidx, (uintmax_t)prev_offset,
+		    (uintmax_t)prev_size, (uintmax_t)next_size));
+	}
+#endif
 
 	VM_OBJECT_WUNLOCK(prev_object);
 	return (TRUE);

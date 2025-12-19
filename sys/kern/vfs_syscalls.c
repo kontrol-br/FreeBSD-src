@@ -290,10 +290,8 @@ kern_do_statfs(struct thread *td, struct mount *mp, struct statfs *buf)
 	error = VFS_STATFS(mp, buf);
 	if (error != 0)
 		goto out;
-	if (priv_check_cred_vfs_generation(td->td_ucred)) {
-		buf->f_fsid.val[0] = buf->f_fsid.val[1] = 0;
+	if (priv_check_cred_vfs_generation(td->td_ucred))
 		prison_enforce_statfs(td->td_ucred, mp, buf);
-	}
 out:
 	vfs_unbusy(mp);
 	return (error);
@@ -545,7 +543,6 @@ restart:
 			sptmp = malloc(sizeof(struct statfs), M_STATFS,
 			    M_WAITOK);
 			*sptmp = *sp;
-			sptmp->f_fsid.val[0] = sptmp->f_fsid.val[1] = 0;
 			prison_enforce_statfs(td->td_ucred, mp, sptmp);
 			sp = sptmp;
 		} else
@@ -1119,7 +1116,7 @@ flags_to_rights(int flags, cap_rights_t *rightsp)
 	if (flags & O_TRUNC)
 		cap_rights_set_one(rightsp, CAP_FTRUNCATE);
 
-	if (flags & (O_SYNC | O_FSYNC))
+	if (flags & (O_SYNC | O_FSYNC | O_DSYNC))
 		cap_rights_set_one(rightsp, CAP_FSYNC);
 
 	if (flags & (O_EXLOCK | O_SHLOCK))

@@ -466,13 +466,13 @@ pfsync_clone_destroy(struct ifnet *ifp)
 			    TAILQ_FIRST(&b->b_deferrals);
 
 			ret = callout_stop(&pd->pd_tmo);
-			PFSYNC_BUCKET_UNLOCK(b);
 			if (ret > 0) {
 				pfsync_undefer(pd, 1);
 			} else {
+				PFSYNC_BUCKET_UNLOCK(b);
 				callout_drain(&pd->pd_tmo);
+				PFSYNC_BUCKET_LOCK(b);
 			}
-			PFSYNC_BUCKET_LOCK(b);
 		}
 		MPASS(b->b_deferred == 0);
 		MPASS(TAILQ_EMPTY(&b->b_deferrals));
@@ -545,6 +545,9 @@ pfsync_state_import(union pfsync_state_union *sp, int flags, int msg_version)
 	u_int8_t		 wire_proto, stack_proto;
 
 	PF_RULES_RASSERT();
+
+	if (strnlen(sp->pfs_1301.ifname, IFNAMSIZ) == IFNAMSIZ)
+		return (EINVAL);
 
 	if (sp->pfs_1301.creatorid == 0) {
 		if (V_pf_status.debug >= PF_DEBUG_MISC)
@@ -1897,25 +1900,28 @@ pfsyncioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 static void
 pfsync_out_state_1301(struct pf_kstate *st, void *buf)
 {
-	union pfsync_state_union *sp = buf;
+	struct pfsync_state_1301 *sp;
 
-	pfsync_state_export(sp, st, PFSYNC_MSG_VERSION_1301);
+	sp = buf;
+	pfsync_state_export_1301(sp, st);
 }
 
 static void
 pfsync_out_state_1400(struct pf_kstate *st, void *buf)
 {
-	union pfsync_state_union *sp = buf;
+	struct pfsync_state_1400 *sp;
 
-	pfsync_state_export(sp, st, PFSYNC_MSG_VERSION_1400);
+	sp = buf;
+	pfsync_state_export_1400(sp, st);
 }
 
 static void
 pfsync_out_state_1500(struct pf_kstate *st, void *buf)
 {
-	union pfsync_state_union *sp = buf;
+	struct pfsync_state_1500 *sp;
 
-	pfsync_state_export(sp, st, PFSYNC_MSG_VERSION_1500);
+	sp = buf;
+	pfsync_state_export_1500(sp, st);
 }
 
 static void

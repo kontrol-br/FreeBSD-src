@@ -1,4 +1,4 @@
-/*	$NetBSD: blocklistd.c,v 1.10 2025/03/26 17:09:35 christos Exp $	*/
+/*	$NetBSD: blocklistd.c,v 1.14 2025/12/15 15:51:37 christos Exp $	*/
 
 /*-
  * Copyright (c) 2015 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 #ifdef HAVE_SYS_CDEFS_H
 #include <sys/cdefs.h>
 #endif
-__RCSID("$NetBSD: blocklistd.c,v 1.10 2025/03/26 17:09:35 christos Exp $");
+__RCSID("$NetBSD: blocklistd.c,v 1.14 2025/12/15 15:51:37 christos Exp $");
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -196,7 +196,8 @@ process(bl_t bl)
 	if (debug || bi->bi_msg[0]) {
 		sockaddr_snprintf(rbuf, sizeof(rbuf), "%a:%p", (void *)&rss);
 		(*lfun)(bi->bi_msg[0] ? LOG_INFO : LOG_DEBUG,
-		    "processing type=%d fd=%d remote=%s msg=%s uid=%lu gid=%lu",
+		    "processing type=%d fd=%d remote=%s msg=\"%s\" "
+		    "uid=%lu gid=%lu",
 		    bi->bi_type, bi->bi_fd, rbuf,
 		    bi->bi_msg, (unsigned long)bi->bi_uid,
 		    (unsigned long)bi->bi_gid);
@@ -226,7 +227,7 @@ process(bl_t bl)
 		 * set the number of fails to be one less than the
 		 * configured limit.  Fallthrough to the normal BL_ADD
 		 * processing, which will increment the failure count
-		 * to the threshhold, and block the abusive address.
+		 * to the threshold, and block the abusive address.
 		 */
 		if (c.c_nfail != -1)
 			dbi.count = c.c_nfail - 1;
@@ -331,8 +332,8 @@ again:
 			(*lfun)(LOG_INFO, "released %s/%d:%d after %d seconds",
 			    buf, c.c_lmask, c.c_port, c.c_duration);
 		}
-		state_del(state, &c);
-		goto again;
+		if (state_del(state, &c) == 0)
+			goto again;
 	}
 }
 
@@ -543,14 +544,15 @@ main(int argc, char *argv[])
 	state = state_open(dbfile, flags, 0600);
 	if (state == NULL)
 		state = state_open(dbfile,  flags | O_CREAT, 0600);
+	else {
+		if (restore) {
+			if (!flush)
+				rules_flush();
+			rules_restore();
+		}
+	}
 	if (state == NULL)
 		return EXIT_FAILURE;
-
-	if (restore) {
-		if (!flush)
-			rules_flush();
-		rules_restore();
-	}
 
 	if (!debug) {
 		if (daemon(0, 0) == -1)

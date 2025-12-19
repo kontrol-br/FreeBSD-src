@@ -29,7 +29,6 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
 #include "opt_inet.h"
 #include "opt_inet6.h"
 #include "opt_ipsec.h"
@@ -607,7 +606,7 @@ tcp_recv_udp_tunneled_packet(struct mbuf *m, int off, struct inpcb *inp,
 		}
 	}
 	m->m_pkthdr.tcp_tun_port = port = uh->uh_sport;
-	bcopy(th, uh, m->m_len - off);
+	bcopy(th, uh, m->m_len - off - sizeof(struct udphdr));
 	m->m_len -= sizeof(struct udphdr);
 	m->m_pkthdr.len -= sizeof(struct udphdr);
 	/*

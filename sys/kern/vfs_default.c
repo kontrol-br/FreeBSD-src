@@ -77,7 +77,6 @@ static int	dirent_exists(struct vnode *vp, const char *dirname,
 static int vop_stdis_text(struct vop_is_text_args *ap);
 static int vop_stdunset_text(struct vop_unset_text_args *ap);
 static int vop_stdadd_writecount(struct vop_add_writecount_args *ap);
-static int vop_stdcopy_file_range(struct vop_copy_file_range_args *ap);
 static int vop_stdfdatasync(struct vop_fdatasync_args *ap);
 static int vop_stdgetpages_async(struct vop_getpages_async_args *ap);
 static int vop_stdread_pgcache(struct vop_read_pgcache_args *ap);
@@ -458,6 +457,7 @@ vop_stdpathconf(struct vop_pathconf_args *ap)
 		case _PC_HAS_NAMEDATTR:
 		case _PC_HAS_HIDDENSYSTEM:
 		case _PC_CLONE_BLKSIZE:
+		case _PC_CASE_INSENSITIVE:
 			*ap->a_retval = 0;
 			return (0);
 		default:
@@ -1425,7 +1425,7 @@ vfs_stdnosync(struct mount *mp, int waitfor)
 	return (0);
 }
 
-static int
+int
 vop_stdcopy_file_range(struct vop_copy_file_range_args *ap)
 {
 	int error;
