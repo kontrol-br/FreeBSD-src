@@ -40,7 +40,7 @@
 #include <sys/_null.h>
 #include <sys/_param.h>
 
-#define	BSD	1500063		/* System version (year & month). */
+#define	BSD	1500068		/* System version (year & month). */
 #define BSD4_3	1
 #define BSD4_4	1
 
@@ -74,7 +74,7 @@
  * cannot include sys/param.h and should only be updated here.
  */
 #undef __FreeBSD_version
-#define __FreeBSD_version 1500063
+#define __FreeBSD_version 1500068
 
 /*
  * __FreeBSD_kernel__ indicates that this system uses the kernel of FreeBSD,
