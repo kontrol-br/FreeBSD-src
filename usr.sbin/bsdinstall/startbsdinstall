@@ -89,7 +89,7 @@ fi
 msg=$(cat <<EOD
 \ZbCopyright and Trademark Notices.\ZB
 
-Copyright 2016-2024. Kontrol Tecnologia EPP.
+Copyright 2016-2026. Kontrol Tecnologia EPP.
 All Rights Reserved.
 
 All logos, text, and content of Kontrol, including underlying
