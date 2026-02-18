@@ -748,10 +748,13 @@ OLD_FILES+=usr/share/snmp/mibs/BRIDGE-MIB.txt
 OLD_FILES+=usr/share/snmp/mibs/FOKUS-MIB.txt
 OLD_FILES+=usr/share/snmp/mibs/FREEBSD-MIB.txt
 OLD_FILES+=usr/share/snmp/mibs/RSTP-MIB.txt
+OLD_FILES+=usr/tests/lib/libbsnmp/bsnmpd_test
+OLD_FILES+=usr/tests/lib/libbsnmp/Kyuafile
 OLD_DIRS+=usr/include/bsnmp
 OLD_DIRS+=usr/share/snmp
 OLD_DIRS+=usr/share/snmp/defs
 OLD_DIRS+=usr/share/snmp/mibs
+OLD_DIRS+=usr/tests/lib/libbsnmp
 .endif
 
 .if ${MK_CALENDAR} == no
@@ -1922,6 +1925,26 @@ OLD_FILES+=usr/share/examples/sunrpc/sort/Makefile
 OLD_FILES+=usr/share/examples/sunrpc/sort/rsort.c
 OLD_FILES+=usr/share/examples/sunrpc/sort/sort.x
 OLD_FILES+=usr/share/examples/sunrpc/sort/sort_proc.c
+OLD_FILES+=usr/tests/share/examples/tests/atf/Kyuafile
+OLD_FILES+=usr/tests/share/examples/tests/atf/cp_test
+OLD_FILES+=usr/tests/share/examples/tests/atf/printf_test
+OLD_FILES+=usr/tests/share/examples/tests/googletest/Kyuafile
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample10_unittest
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample1_unittest
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample2_unittest
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample3_unittest
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample4_unittest
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample5_unittest
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample6_unittest
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample7_unittest
+OLD_FILES+=usr/tests/share/examples/tests/googletest/sample8_unittest
+OLD_FILES+=usr/tests/share/examples/tests/plain/Kyuafile
+OLD_FILES+=usr/tests/share/examples/tests/plain/cp_test
+OLD_FILES+=usr/tests/share/examples/tests/plain/printf_test
+OLD_FILES+=usr/tests/share/examples/tests/tap/Kyuafile
+OLD_FILES+=usr/tests/share/examples/tests/tap/cp_test
+OLD_FILES+=usr/tests/share/examples/tests/tap/printf_test
+OLD_FILES+=usr/tests/share/examples/tests/Kyuafile
 OLD_FILES+=usr/share/examples/tcsh/complete.tcsh
 OLD_FILES+=usr/share/examples/tcsh/csh-mode.el
 OLD_FILES+=usr/share/examples/uefisign/uefikeys
@@ -1989,6 +2012,12 @@ OLD_DIRS+=usr/share/examples/sunrpc/sort
 OLD_DIRS+=usr/share/examples/tcsh
 OLD_DIRS+=usr/share/examples/uefisign
 OLD_DIRS+=usr/share/examples/ypldap
+OLD_DIRS+=usr/tests/share/examples/tests/atf
+OLD_DIRS+=usr/tests/share/examples/tests/plain
+OLD_DIRS+=usr/tests/share/examples/tests/googletest
+OLD_DIRS+=usr/tests/share/examples/tests/tap
+OLD_DIRS+=usr/tests/share/examples/tests
+OLD_DIRS+=usr/tests/share/examples
 .endif
 
 .if ${MK_FDT} == no
@@ -2120,6 +2149,10 @@ OLD_FILES+=usr/share/man/man6/random.6.gz
 OLD_FILES+=usr/share/man/man6/rot13.6.gz
 OLD_FILES+=usr/share/man/man8/strfile.8.gz
 OLD_FILES+=usr/share/man/man8/unstr.8.gz
+OLD_FILES+=usr/tests/usr.bin/factor/factor_tests
+OLD_FILES+=usr/tests/usr.bin/factor/primes_tests
+OLD_FILES+=usr/tests/usr.bin/factor/Kyuafile
+OLD_DIRS+=usr/tests/usr.bin/factor
 .endif
 
 .if ${MK_GOOGLETEST} == no
@@ -2307,9 +2340,6 @@ OLD_FILES+=usr/share/man/man5/hesiod.conf.5.gz
 .endif
 
 .if ${MK_HTML} == no
-OLD_FILES+=usr/share/doc/ncurses/hackguide.html
-OLD_FILES+=usr/share/doc/ncurses/ncurses-intro.html
-OLD_DIRS+=usr/share/doc/ncurses
 OLD_FILES+=usr/share/doc/ntp/accopt.html
 OLD_FILES+=usr/share/doc/ntp/assoc.html
 OLD_FILES+=usr/share/doc/ntp/audio.html
@@ -3739,7 +3769,6 @@ OLD_FILES+=usr/lib/libkdb5.so
 OLD_FILES+=usr/lib/libkrad.a
 OLD_FILES+=usr/lib/libkrad.so
 OLD_FILES+=usr/lib/libkrb5profile.a
-OLD_FILES+=usr/lib/libkrb5profile.so
 OLD_FILES+=usr/lib/libkrb5support.a
 OLD_FILES+=usr/lib/libkrb5support.so
 OLD_FILES+=usr/lib/libverto.a
@@ -3792,7 +3821,6 @@ OLD_LIBS+=usr/lib/libkadm5srv_mit.so.122
 OLD_LIBS+=usr/lib/libkdb5.so.122
 OLD_LIBS+=usr/lib/libkrad.so.122
 OLD_LIBS+=usr/lib/libkrb5.so.122
-OLD_LIBS+=usr/lib/libkrb5profile.so.122
 OLD_LIBS+=usr/lib/libkrb5support.so.122
 OLD_LIBS+=usr/lib/libverto.so.122
 .endif	# ${MK_KERBEROS} == "no" || ${MK_MITKRB5} == "no"
@@ -3838,7 +3866,7 @@ OLD_DIRS+=usr/share/moused
 .for LIBCOMPAT libcompat in ${_ALL_LIBCOMPATS_libcompats}
 .  if ${MK_LIB${LIBCOMPAT}} == no
 OLD_FILES+=etc/mtree/BSD.lib${libcompat}.dist
-OLD_FILES+=libexec/ld-elf${libcompat}.so.1
+OLD_LIBS+=libexec/ld-elf${libcompat}.so.1
 .    if exists(${DESTDIR}/usr/lib${libcompat})
 LIB${LIBCOMPAT}_DIRS!=find ${DESTDIR}/usr/lib${libcompat} -type d \
     | sed -e 's,^${DESTDIR}/,,'; echo
@@ -7387,6 +7415,19 @@ OLD_DIRS+=var/spool/clientmqueue
 OLD_FILES+=var/db/services.db
 .endif
 
+.if ${MK_SOUND} == no
+OLD_DIRS+=lib/mixer
+OLD_DIRS+=lib/virtual_oss
+OLD_DIRS+=usr.bin/beep
+OLD_DIRS+=usr.bin/mididump
+OLD_DIRS+=usr.sbin/mixer
+OLD_DIRS+=usr.sbin/sndctl
+OLD_DIRS+=usr.sbin/virtual_oss
+OLD_FILES+=libexec/rc/rc.d/mixer
+OLD_FILES+=libexec/rc/rc.d/virtual_oss
+OLD_FILES+=sbin/devd/snd.conf
+.endif
+
 .if ${MK_NUAGEINIT} == no
 OLD_FILES+=etc/rc.d/nuageinit
 OLD_FILES+=usr/libexec/nuageinit
@@ -8323,6 +8364,12 @@ OLD_FILES+=usr/bin/tftp
 OLD_FILES+=usr/libexec/tftpd
 OLD_FILES+=usr/share/man/man1/tftp.1.gz
 OLD_FILES+=usr/share/man/man8/tftpd.8.gz
+OLD_FILES+=usr/tests/libexec/tftpd/functional
+OLD_FILES+=usr/tests/libexec/tftpd/Kyuafile
+OLD_FILES+=usr/tests/usr.bin/tftp/tftp_test
+OLD_FILES+=usr/tests/usr.bin/tftp/Kyuafile
+OLD_DIRS+=usr/tests/libexec/tftpd
+OLD_DIRS+=usr/tests/usr.bin/tftp
 .endif
 
 .if ${MK_TOOLCHAIN} == no

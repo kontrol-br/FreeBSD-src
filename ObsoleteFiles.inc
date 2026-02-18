@@ -51,6 +51,24 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+
+# 20260120: remove obsolete MIT KRB5 plugin files
+OLD_LIBS+=usr/lib/krb5/plugins/kdb/db2.so.121
+OLD_LIBS+=usr/lib/krb5/plugins/preauth/otp.so.121
+OLD_LIBS+=usr/lib/krb5/plugins/preauth/pkinit.so.121
+OLD_LIBS+=usr/lib/krb5/plugins/preauth/spake.so.121
+OLD_LIBS+=usr/lib/krb5/plugins/preauth/test.so.121
+OLD_LIBS+=usr/lib/krb5/plugins/tls/k5tls.so.121
+
+# 20260120: Made libkrb5profile INTERNALLIB
+OLD_LIBS+=usr/lib/libkrb5profile.so.122
+OLD_FILES+=usr/lib/libkrb5profile.so
+
+# 20260114: remove ncurses html documentation
+OLD_FILES+=usr/share/doc/ncurses/hackguide.html
+OLD_FILES+=usr/share/doc/ncurses/ncurses-intro.html
+OLD_DIRS+=usr/share/doc/ncurses
+
 # 20251215: Remove intrinsic utilities
 OLD_FILES+=usr/bin/alias
 OLD_FILES+=usr/bin/bg

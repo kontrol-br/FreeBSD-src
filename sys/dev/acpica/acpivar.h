@@ -191,6 +191,7 @@ extern struct mtx			acpi_mutex;
 #define	ACPI_THERMAL		0x01000000
 #define	ACPI_TIMER		0x02000000
 #define	ACPI_OEM		0x04000000
+#define	ACPI_SPMC		0x08000000
 
 /*
  * Constants for different interrupt models used with acpi_SetIntrModel().
@@ -481,12 +482,14 @@ UINT32		acpi_event_sleep_button_wake(void *context);
 #define ACPI_EVENT_PRI_DEFAULT    10000
 #define ACPI_EVENT_PRI_LAST       20000
 
-typedef void (*acpi_event_handler_t)(void *, int);
+typedef void (*acpi_event_handler_t)(void *, enum power_stype);
 
 EVENTHANDLER_DECLARE(acpi_sleep_event, acpi_event_handler_t);
 EVENTHANDLER_DECLARE(acpi_wakeup_event, acpi_event_handler_t);
 EVENTHANDLER_DECLARE(acpi_acad_event, acpi_event_handler_t);
 EVENTHANDLER_DECLARE(acpi_video_event, acpi_event_handler_t);
+EVENTHANDLER_DECLARE(acpi_post_dev_suspend, acpi_event_handler_t);
+EVENTHANDLER_DECLARE(acpi_pre_dev_resume, acpi_event_handler_t);
 
 /* Device power control. */
 ACPI_STATUS	acpi_pwr_wake_enable(ACPI_HANDLE consumer, int enable);

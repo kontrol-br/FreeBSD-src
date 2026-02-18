@@ -565,7 +565,12 @@ moea64_bootstrap_native(vm_offset_t kernelstart, vm_offset_t kernelend)
 	moea64_early_bootstrap(kernelstart, kernelend);
 
 	switch (mfpvr() >> 16) {
+	case IBMPOWER8:
+	case IBMPOWER8E:
+	case IBMPOWER8NVL:
 	case IBMPOWER9:
+	case IBMPOWER10:
+	case IBMPOWER11:
 		moea64_need_lock = false;
 		break;
 	case IBMPOWER4:
