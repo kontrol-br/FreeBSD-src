@@ -810,7 +810,7 @@ main(int argc, char *argv[])
 			case SIGINT:
 			case SIGQUIT:
 			case SIGTERM:
-				if (ev.ident == SIGTERM || Debug)
+				if (ev.ident == SIGTERM || Foreground || Debug)
 					die(ev.ident);
 				break;
 			case SIGALRM:
@@ -1830,15 +1830,14 @@ fprintlog_write(struct filed *f, struct iovlist *il, int flags)
 			case EHOSTUNREACH:
 			case EHOSTDOWN:
 			case EADDRNOTAVAIL:
+			case EAGAIN:
+			case ECONNREFUSED:
 				break;
 			/* case EBADF: */
 			/* case EACCES: */
 			/* case ENOTSOCK: */
 			/* case EFAULT: */
 			/* case EMSGSIZE: */
-			/* case EAGAIN: */
-			/* case ENOBUFS: */
-			/* case ECONNREFUSED: */
 			default:
 				dprintf("removing entry: errno=%d\n", e);
 				f->f_type = F_UNUSED;
@@ -2571,7 +2570,7 @@ syslogd_cap_enter(void)
 	if (cap_syslogd == NULL)
 		err(1, "Failed to open the syslogd.casper libcasper service");
 	cap_net = cap_service_open(cap_casper, "system.net");
-	if (cap_syslogd == NULL)
+	if (cap_net == NULL)
 		err(1, "Failed to open the system.net libcasper service");
 	cap_close(cap_casper);
 	limit = cap_net_limit_init(cap_net,
@@ -2953,8 +2952,9 @@ parse_selector(const char *p, struct filed *f)
 
 		pri = decode(buf, prioritynames);
 		if (pri < 0) {
-			dprintf("unknown priority name \"%s\"", buf);
-			return (NULL);
+			warnx("unknown priority name \"%s\", setting to 'info'",
+			    buf);
+			pri = LOG_INFO;
 		}
 	}
 	if (!pri_cmp)
@@ -2976,11 +2976,12 @@ parse_selector(const char *p, struct filed *f)
 		} else {
 			i = decode(buf, facilitynames);
 			if (i < 0) {
-				dprintf("unknown facility name \"%s\"", buf);
-				return (NULL);
+				warnx("unknown facility name \"%s\", ignoring",
+				    buf);
+			} else {
+				f->f_pmask[i >> 3] = pri;
+				f->f_pcmp[i >> 3] = pri_cmp;
 			}
-			f->f_pmask[i >> 3] = pri;
-			f->f_pcmp[i >> 3] = pri_cmp;
 		}
 		while (*p == ',' || *p == ' ')
 			p++;
