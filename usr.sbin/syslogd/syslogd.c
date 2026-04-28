@@ -810,7 +810,7 @@ main(int argc, char *argv[])
 			case SIGINT:
 			case SIGQUIT:
 			case SIGTERM:
-				if (ev.ident == SIGTERM || Debug)
+				if (ev.ident == SIGTERM || Foreground || Debug)
 					die(ev.ident);
 				break;
 			case SIGALRM:
