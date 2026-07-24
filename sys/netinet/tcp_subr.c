@@ -341,8 +341,11 @@ static struct inpcb *tcp_drop_syn_sent(struct inpcb *, int);
 static char *	tcp_log_addr(struct in_conninfo *inc, struct tcphdr *th,
 		    const void *ip4hdr, const void *ip6hdr);
 static void	tcp_default_switch_failed(struct tcpcb *tp);
+
+#ifdef INET
 static ipproto_ctlinput_t	tcp_ctlinput;
 static udp_tun_icmp_t		tcp_ctlinput_viaudp;
+#endif
 
 static struct tcp_function_block tcp_def_funcblk = {
 	.tfb_tcp_block_name = "freebsd",
@@ -2213,6 +2216,8 @@ tcp_send_challenge_ack(struct tcpcb *tp, struct tcphdr *th, struct mbuf *m)
 		tcp_respond(tp, mtod(m, void *), th, m, tp->rcv_nxt,
 		    tp->snd_nxt, TH_ACK);
 		tp->last_ack_sent = tp->rcv_nxt;
+	} else {
+		m_freem(m);
 	}
 }
 
