@@ -3,6 +3,10 @@
 .PATH:	${SRCTOP}/sys/opencrypto
 .PATH:	${SRCTOP}/contrib/llvm-project/clang/lib/Headers
 
+# Bootstrap compilers do not necessarily have their resource headers installed.
+# Keep the in-tree intrinsic headers as a fallback after the system headers.
+CFLAGS	+= -idirafter ${SRCTOP}/contrib/llvm-project/clang/lib/Headers
+
 KMOD	= blake2
 
 # Vendor sources

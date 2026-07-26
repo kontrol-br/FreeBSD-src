@@ -1,6 +1,10 @@
 .PATH: ${SRCTOP}/sys/crypto/aesni
 .PATH: ${SRCTOP}/contrib/llvm-project/clang/lib/Headers
 
+# Bootstrap compilers do not necessarily have their resource headers installed.
+# Keep the in-tree intrinsic headers as a fallback after the system headers.
+CFLAGS+=	-idirafter ${SRCTOP}/contrib/llvm-project/clang/lib/Headers
+
 KMOD=	aesni
 SRCS=	aesni.c
 SRCS+=	aeskeys_${MACHINE_CPUARCH}.S
