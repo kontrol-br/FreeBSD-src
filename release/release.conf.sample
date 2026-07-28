@@ -35,6 +35,10 @@ PORTBRANCH="main"
 #MAKE_CONF="/etc/local/make.conf"
 #SRC_CONF="/etc/local/src.conf"
 
+## Set only when the bootstrap chroot buildworld/installworld must consume a
+## product src.conf too.  The default keeps the bootstrap world uncustomized.
+#CHROOT_SRC_CONF="/etc/local/src.conf"
+
 ## Set to use make(1) flags.
 #MAKE_FLAGS="-s"
 

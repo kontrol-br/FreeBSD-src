@@ -87,6 +87,9 @@ env_setup() {
 	# non-default settings.
 	MAKE_CONF="/dev/null"
 	SRC_CONF="/dev/null"
+	# The bootstrap chroot normally remains an uncustomized FreeBSD world.
+	# Product release configurations may opt in to their src.conf here.
+	CHROOT_SRC_CONF="/dev/null"
 
 	# The number of make(1) jobs, defaults to the number of CPUs available
 	# for buildworld, and half of number of CPUs available for buildkernel.
@@ -159,7 +162,7 @@ env_check() {
 	# this file, unless overridden by release.conf.  In most cases, these
 	# will not need to be changed.
 	CONF_FILES="__MAKE_CONF=${MAKE_CONF} SRCCONF=${SRC_CONF}"
-	NOCONF_FILES="__MAKE_CONF=/dev/null SRCCONF=/dev/null"
+	NOCONF_FILES="__MAKE_CONF=/dev/null SRCCONF=${CHROOT_SRC_CONF}"
 	if [ -n "${TARGET}" ] && [ -n "${TARGET_ARCH}" ]; then
 		ARCH_FLAGS="TARGET=${TARGET} TARGET_ARCH=${TARGET_ARCH}"
 	else
