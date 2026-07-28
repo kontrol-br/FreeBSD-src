@@ -1,0 +1,34 @@
+Kontrol 2.7.2 amd64 build configuration
+=======================================
+
+The supported Kontrol release target is amd64/amd64.  Use the checked-in
+release driver configuration so that both the bootstrap chroot world and the
+product world consume Kontrol_src.conf:
+
+    sh release/release.sh -c release/conf/Kontrol_release.conf
+
+Kontrol does not ship amd64's optional 32-bit compatibility libraries.
+WITHOUT_LIB32=yes prevents Makefile.inc1 from adding build32 to buildworld and
+avoids requiring i386-only OpenSSL assembly such as aes-586.S.  That generated
+assembly is intentionally not added merely to hide a missing build option.
+
+Poudriere boundary
+------------------
+
+Poudriere's git jail method does not consume release/conf/Kontrol_src.conf.
+On the Poudriere host, create this exact file:
+
+    /usr/local/etc/poudriere.d/Kontrol_v2_7_2_amd64-src.conf
+
+with this exact content:
+
+    WITHOUT_LIB32=yes
+
+Then create or update the jail with architecture amd64.  Before committing to
+a long build, inspect the jail's effective make configuration:
+
+    poudriere jail -i -j Kontrol_v2_7_2_amd64
+    poudriere jail -s -j Kontrol_v2_7_2_amd64
+
+In the build log, confirm that the world is amd64/amd64, MK_LIB32 is "no", and
+there is no "stage 4.3.1: building lib32 shim libraries" or build32 target.
